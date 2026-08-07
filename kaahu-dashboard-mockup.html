@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaahu — performance dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#FAF9F6;
+    --panel:#FFFFFF;
+    --ink:#211F1B;
+    --ink-soft:#6B6860;
+    --ink-faint:#9C988C;
+    --rule:#E4E1D8;
+    --accent:#7A6A52;
+    --accent-soft:#EFE9DE;
+    --brick:#A8503D;
+    --brick-soft:#F3E5E1;
+    --moss:#5B6E4F;
+    --moss-soft:#E7ECE1;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1160px;margin:0 auto;padding:0 32px 80px;}
+
+  /* header */
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    padding:40px 0 24px;
+    border-bottom:1px solid var(--rule);
+  }
+  .mark{font-size:12px;letter-spacing:0.16em;color:var(--accent);font-weight:600;text-transform:uppercase;margin-bottom:10px;}
+  h1{font-family:'Fraunces',serif;font-weight:500;font-size:32px;letter-spacing:-0.01em;}
+  .subhead{color:var(--ink-soft);font-size:13px;margin-top:6px;}
+  .range{
+    display:flex;align-items:center;gap:14px;
+    font-size:13px;color:var(--ink-soft);
+  }
+  .range .dates{font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums;}
+  .range select{
+    font-family:inherit;font-size:13px;color:var(--ink);
+    border:1px solid var(--rule);background:var(--panel);
+    padding:6px 10px;border-radius:3px;
+  }
+
+  /* kpi row */
+  .kpis{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    border:1px solid var(--rule);
+    border-radius:4px;
+    overflow:hidden;
+    margin:32px 0;
+    background:var(--panel);
+  }
+  .kpi{
+    padding:20px 18px;
+    border-right:1px solid var(--rule);
+  }
+  .kpi:last-child{border-right:none;}
+  .kpi .label{font-size:11px;letter-spacing:0.04em;color:var(--ink-faint);text-transform:uppercase;margin-bottom:10px;}
+  .kpi .value{font-family:'Fraunces',serif;font-size:26px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;}
+  .kpi .delta{font-size:12px;margin-top:8px;font-variant-numeric:tabular-nums;}
+  .delta.up{color:var(--moss);}
+  .delta.down{color:var(--brick);}
+  .delta.flat{color:var(--ink-faint);}
+
+  /* section headers */
+  .section-head{
+    display:flex;justify-content:space-between;align-items:baseline;
+    margin-bottom:16px;
+  }
+  .section-head h2{font-size:15px;font-weight:600;}
+  .section-head .note{font-size:12px;color:var(--ink-faint);}
+
+  /* two column row */
+  .row{display:grid;grid-template-columns:1.5fr 1fr;gap:24px;margin-bottom:32px;}
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--rule);
+    border-radius:4px;
+    padding:24px;
+  }
+
+  /* funnel */
+  .funnel-step{margin-bottom:14px;}
+  .funnel-row{display:flex;align-items:center;gap:12px;}
+  .funnel-label{width:118px;font-size:12px;color:var(--ink-soft);flex-shrink:0;}
+  .funnel-track{flex:1;height:22px;background:var(--accent-soft);border-radius:2px;overflow:hidden;}
+  .funnel-fill{height:100%;background:var(--accent);}
+  .funnel-value{width:76px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;font-weight:500;flex-shrink:0;}
+  .funnel-drop{
+    font-size:11px;color:var(--brick);
+    margin:2px 0 2px 130px;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{
+    text-align:left;
+    font-size:11px;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-faint);
+    font-weight:500;
+    padding:0 12px 10px;
+    border-bottom:1px solid var(--rule);
+  }
+  thead th.num{text-align:right;}
+  tbody td{
+    padding:14px 12px;
+    border-bottom:1px solid var(--rule);
+    font-variant-numeric:tabular-nums;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  td.num{text-align:right;}
+  td.campaign{font-weight:500;}
+  .campaign-type{display:block;font-weight:400;color:var(--ink-faint);font-size:11px;margin-top:2px;font-variant-numeric:normal;}
+  .roas-good{color:var(--moss);font-weight:600;}
+  .roas-weak{color:var(--brick);font-weight:600;}
+
+  footer{margin-top:32px;font-size:11px;color:var(--ink-faint);border-top:1px solid var(--rule);padding-top:16px;}
+
+  @media (max-width: 860px){
+    .kpis{grid-template-columns:repeat(3,1fr);}
+    .kpi:nth-child(3){border-right:none;}
+    .kpi:nth-child(n+4){border-top:1px solid var(--rule);}
+    .row{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="mark">Kaahu</div>
+      <h1>Performance dashboard</h1>
+      <div class="subhead">Meta ads and Shopify, combined view</div>
+    </div>
+    <div class="range">
+      <span class="dates">Jul 7 – Aug 5, 2026</span>
+      <select>
+        <option>Last 30 days</option>
+        <option>Last 7 days</option>
+        <option>Last 90 days</option>
+      </select>
+    </div>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi">
+      <div class="label">Spend</div>
+      <div class="value">$18,420</div>
+      <div class="delta up">↑ 6.2% vs prior</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Revenue</div>
+      <div class="value">$54,900</div>
+      <div class="delta up">↑ 11.4% vs prior</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Blended ROAS</div>
+      <div class="value">2.98×</div>
+      <div class="delta up">↑ 0.14 vs prior</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Orders</div>
+      <div class="value">187</div>
+      <div class="delta up">↑ 9 vs prior</div>
+    </div>
+    <div class="kpi">
+      <div class="label">AOV</div>
+      <div class="value">$293.58</div>
+      <div class="delta flat">— flat vs prior</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Blended CAC</div>
+      <div class="value">$98.50</div>
+      <div class="delta down">↓ 3.10 vs prior</div>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="panel">
+      <div class="section-head">
+        <h2>Spend vs revenue</h2>
+        <span class="note">Daily, last 30 days</span>
+      </div>
+      <canvas id="spendRevenueChart" height="220"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="section-head">
+        <h2>Meta funnel</h2>
+        <span class="note">Paid traffic only</span>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Impressions</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:100%"></div></div>
+          <span class="funnel-value">812,400</span>
+        </div>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Clicks</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:38%"></div></div>
+          <span class="funnel-value">14,230</span>
+        </div>
+        <div class="funnel-drop">1.75% CTR</div>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Landing page views</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:32%"></div></div>
+          <span class="funnel-value">11,980</span>
+        </div>
+        <div class="funnel-drop">84.2% of clicks land</div>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Add to cart</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:9%"></div></div>
+          <span class="funnel-value">1,340</span>
+        </div>
+        <div class="funnel-drop">11.2% of views — largest drop</div>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Checkout started</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:4%"></div></div>
+          <span class="funnel-value">612</span>
+        </div>
+        <div class="funnel-drop">45.7% of carts</div>
+      </div>
+
+      <div class="funnel-step">
+        <div class="funnel-row">
+          <span class="funnel-label">Purchases</span>
+          <div class="funnel-track"><div class="funnel-fill" style="width:2%"></div></div>
+          <span class="funnel-value">187</span>
+        </div>
+        <div class="funnel-drop">30.6% of checkouts</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-head">
+      <h2>Campaign breakdown</h2>
+      <span class="note">Sorted by spend</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Campaign</th>
+          <th class="num">Spend</th>
+          <th class="num">CTR</th>
+          <th class="num">CPC</th>
+          <th class="num">Purchases</th>
+          <th class="num">ROAS</th>
+          <th class="num">CPA</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="campaign">Prospecting — tote collection<span class="campaign-type">Cold, interest stack</span></td>
+          <td class="num">$6,180</td>
+          <td class="num">1.42%</td>
+          <td class="num">$1.28</td>
+          <td class="num">41</td>
+          <td class="num roas-weak">2.10×</td>
+          <td class="num">$150.73</td>
+        </tr>
+        <tr>
+          <td class="campaign">Retargeting — cart abandoners<span class="campaign-type">Warm, 14 day window</span></td>
+          <td class="num">$2,340</td>
+          <td class="num">3.85%</td>
+          <td class="num">$0.61</td>
+          <td class="num">58</td>
+          <td class="num roas-good">5.62×</td>
+          <td class="num">$40.34</td>
+        </tr>
+        <tr>
+          <td class="campaign">Prospecting — lookalike 1%<span class="campaign-type">Cold, purchaser seed</span></td>
+          <td class="num">$5,420</td>
+          <td class="num">1.68%</td>
+          <td class="num">$1.09</td>
+          <td class="num">39</td>
+          <td class="num roas-weak">2.44×</td>
+          <td class="num">$139.00</td>
+        </tr>
+        <tr>
+          <td class="campaign">Retargeting — site visitors 30d<span class="campaign-type">Warm, broad</span></td>
+          <td class="num">$1,890</td>
+          <td class="num">2.91%</td>
+          <td class="num">$0.74</td>
+          <td class="num">33</td>
+          <td class="num roas-good">4.87×</td>
+          <td class="num">$57.27</td>
+        </tr>
+        <tr>
+          <td class="campaign">Broad — open targeting<span class="campaign-type">Cold, advantage+</span></td>
+          <td class="num">$2,590</td>
+          <td class="num">1.21%</td>
+          <td class="num">$1.51</td>
+          <td class="num">16</td>
+          <td class="num roas-weak">1.78×</td>
+          <td class="num">$161.88</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    Sample data for layout reference. Live figures populate once the Shopify and Meta API routes are connected.
+  </footer>
+
+</div>
+
+<script>
+const ctx = document.getElementById('spendRevenueChart');
+const days = Array.from({length: 30}, (_, i) => {
+  const d = new Date(2026, 6, 7 + i);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+});
+const revenue = [1420,1680,1510,1890,2100,1750,1980,2340,2210,1690,
+                  1580,2450,2680,2190,1870,2050,2380,2610,2890,2140,
+                  1960,2280,2510,2790,3010,2340,2160,2480,2650,2900];
+const spend = [520,560,540,610,650,590,620,700,680,600,
+               570,720,760,660,610,640,700,730,780,650,
+               600,660,690,740,780,650,620,680,710,750];
+
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: days,
+    datasets: [
+      {
+        label: 'Revenue',
+        data: revenue,
+        borderColor: '#7A6A52',
+        backgroundColor: 'rgba(122,106,82,0.08)',
+        borderWidth: 1.75,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.25
+      },
+      {
+        label: 'Spend',
+        data: spend,
+        borderColor: '#A8503D',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderDash: [3,3],
+        pointRadius: 0,
+        tension: 0.25
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'top',
+        align: 'end',
+        labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { family: 'Inter', size: 11 }, color: '#6B6860' }
+      },
+      tooltip: {
+        backgroundColor: '#211F1B',
+        titleFont: { family: 'Inter', size: 11 },
+        bodyFont: { family: 'Inter', size: 11 },
+        padding: 10,
+        cornerRadius: 3
+      }
+    },
+    scales: {
+      x: { ticks: { font: { family: 'Inter', size: 10 }, color: '#9C988C', maxTicksLimit: 8 }, grid: { display: false } },
+      y: { ticks: { font: { family: 'Inter', size: 10 }, color: '#9C988C', callback: v => '$' + v.toLocaleString() }, grid: { color: '#E4E1D8' } }
+    }
+  }
+});
+</script>
+
+</body>
+</html>
