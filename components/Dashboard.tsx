@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CampaignTable } from "./CampaignTable";
+import { CampaignTable, type PerformanceRow } from "./CampaignTable";
 import { DateRangePicker, type DateRange } from "./DateRangePicker";
 import { KpiCard } from "./KpiCard";
 import { MetaFunnel } from "./MetaFunnel";
+import { MarketSpendPanel } from "./MarketSpendPanel";
 import { SpendRevenueChart } from "./SpendRevenueChart";
-import type { Campaign } from "@/lib/sample-data";
+import { OrderDetailsDrawer, type OrderSummary } from "./OrderDetailsDrawer";
 
 type ShopifyData = {
   from: string;
@@ -17,6 +18,7 @@ type ShopifyData = {
   orderCount: number;
   aov: number;
   daily: Array<{ date: string; revenue: number; orders: number }>;
+  orders: OrderSummary[];
 };
 
 type MetaData = {
@@ -59,6 +61,7 @@ export function Dashboard() {
   const [shopifyError, setShopifyError] = useState<string | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ordersOpen, setOrdersOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -105,7 +108,7 @@ export function Dashboard() {
     { label: "Spend", value: meta ? money(meta.spend) : "—", delta: loading ? "Loading Meta…" : metaError ? "Unavailable" : "Live Meta spend", trend: metaError ? "down" as const : "flat" as const, source: "Live" },
     { label: "Revenue", value: shopify ? money(shopify.revenue, shopify.currency) : "—", delta: loading ? "Loading Shopify…" : shopifyError ? "Unavailable" : "Live Shopify total", trend: shopifyError ? "down" as const : "flat" as const, source: "Live" },
     { label: "Blended ROAS", value: blendedRoas === null ? "—" : `${blendedRoas.toFixed(2)}×`, delta: "Shopify revenue ÷ Meta spend", trend: "flat" as const, source: "Live" },
-    { label: "Orders", value: shopify ? shopify.orderCount.toLocaleString("en-US") : "—", delta: loading ? "Loading Shopify…" : shopifyError ? "Unavailable" : "Excludes test and cancelled", trend: shopifyError ? "down" as const : "flat" as const, source: "Live" },
+    { label: "Orders", value: shopify ? shopify.orderCount.toLocaleString("en-US") : "—", delta: loading ? "Loading Shopify…" : shopifyError ? "Unavailable" : "Excludes test, cancelled, and $0", trend: shopifyError ? "down" as const : "flat" as const, source: "Live", onClick: shopify ? () => setOrdersOpen(true) : undefined },
     { label: "AOV", value: shopify ? money(shopify.aov, shopify.currency) : "—", delta: loading ? "Loading Shopify…" : shopifyError ? "Unavailable" : "Current order totals", trend: shopifyError ? "down" as const : "flat" as const, source: "Live" },
     { label: "Blended CAC", value: blendedCac === null ? "—" : money(blendedCac), delta: "Meta spend ÷ Shopify orders", trend: "flat" as const, source: "Live" },
   ], [shopify, meta, loading, shopifyError, metaError, blendedRoas, blendedCac]);
@@ -129,7 +132,8 @@ export function Dashboard() {
     }));
   }, [meta]);
 
-  const campaigns = useMemo<Campaign[]>(() => (meta?.campaigns ?? []).map((campaign) => ({
+  const campaigns = useMemo<PerformanceRow[]>(() => (meta?.campaigns ?? []).map((campaign) => ({
+    id: campaign.id,
     name: campaign.name,
     type: `${campaign.impressions.toLocaleString("en-US")} impressions · ${campaign.clicks.toLocaleString("en-US")} link clicks`,
     spend: money(campaign.spend),
@@ -139,6 +143,7 @@ export function Dashboard() {
     roas: `${campaign.roas.toFixed(2)}×`,
     cpa: campaign.cpa === null ? "—" : money(campaign.cpa),
     strong: campaign.roas >= 3,
+    raw: { spend: campaign.spend, ctr: campaign.ctr, cpc: campaign.cpc, purchases: campaign.purchases, roas: campaign.roas, cpa: campaign.cpa },
   })), [meta]);
 
   return (
@@ -169,11 +174,13 @@ export function Dashboard() {
         <MetaFunnel steps={funnel} />
       </section>
 
-      <CampaignTable campaigns={campaigns} />
+      <CampaignTable campaigns={campaigns} range={range} />
+      <MarketSpendPanel range={range} />
 
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
         Shopify and Meta figures are live. Meta conversions use the ad account&apos;s attribution settings; blended metrics are directional.
       </footer>
+      {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={shopify.timezone} from={range.from} to={range.to} />}
     </main>
   );
 }

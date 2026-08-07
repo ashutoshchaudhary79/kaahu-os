@@ -7,6 +7,12 @@ type InsightRow = {
   date_stop: string;
   campaign_id?: string;
   campaign_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
+  comscore_market?: string;
+  region?: string;
   spend?: string;
   impressions?: string;
   clicks?: string;
@@ -45,6 +51,27 @@ export type MetaCampaign = {
   cpc: number;
   roas: number;
   cpa: number | null;
+};
+
+export type MetaBreakdownRow = MetaCampaign;
+
+export type MetaMarket = {
+  name: string;
+  spend: number;
+  spendShare: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpm: number;
+};
+
+export type MetaMarketSummary = {
+  source: "meta";
+  from: string;
+  to: string;
+  totalSpend: number;
+  dimension: "comscore" | "state";
+  markets: MetaMarket[];
 };
 
 export type MetaSummary = {
@@ -139,6 +166,78 @@ function insightParams(from: string, to: string, level: "account" | "campaign") 
   });
 }
 
+function performanceRow(row: InsightRow, level: "campaign" | "adset" | "ad"): MetaBreakdownRow {
+  const normalized = normalizeRow(row);
+  const spend = normalized.spend;
+  const identifiers = level === "campaign"
+    ? [row.campaign_id, row.campaign_name]
+    : level === "adset"
+      ? [row.adset_id, row.adset_name]
+      : [row.ad_id, row.ad_name];
+  return {
+    id: identifiers[0] ?? identifiers[1] ?? "unknown",
+    name: identifiers[1] ?? `Unnamed ${level}`,
+    spend,
+    impressions: normalized.impressions,
+    clicks: normalized.clicks,
+    landingPageViews: normalized.landingPageViews,
+    purchases: normalized.purchases,
+    purchaseValue: normalized.purchaseValue,
+    ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100) : 0,
+    cpc: normalized.clicks ? round(spend / normalized.clicks) : 0,
+    roas: spend ? round(normalized.purchaseValue / spend) : 0,
+    cpa: normalized.purchases ? round(spend / normalized.purchases) : null,
+  };
+}
+
+export async function getMetaBreakdown(from: string, to: string, level: "adset" | "ad", parentId: string): Promise<MetaBreakdownRow[]> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const fields = level === "adset"
+    ? "adset_id,adset_name,spend,impressions,clicks,actions,action_values"
+    : "ad_id,ad_name,spend,impressions,clicks,actions,action_values";
+  const params = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level,
+    fields,
+    filtering: JSON.stringify([{ field: level === "adset" ? "campaign.id" : "adset.id", operator: "EQUAL", value: parentId }]),
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    limit: "500",
+  });
+  const rows = await fetchAll<InsightRow>(`${accountId}/insights`, params);
+  return rows.map((row) => performanceRow(row, level)).sort((a, b) => b.spend - a.spend);
+}
+
+export async function getMetaMarketSummary(from: string, to: string, dimension: "comscore" | "state"): Promise<MetaMarketSummary> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const params = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level: "account",
+    breakdowns: dimension === "comscore" ? "comscore_market" : "region",
+    fields: "spend,impressions,clicks,actions",
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    limit: "500",
+  });
+  const rows = await fetchAll<InsightRow>(`${accountId}/insights`, params);
+  const totalSpend = rows.reduce((sum, row) => sum + number(row.spend), 0);
+  const markets = rows.map((row): MetaMarket => {
+    const normalized = normalizeRow(row);
+    return {
+      name: (dimension === "comscore" ? row.comscore_market : row.region) ?? `Unknown ${dimension === "comscore" ? "market" : "state"}`,
+      spend: round(normalized.spend),
+      spendShare: totalSpend ? round((normalized.spend / totalSpend) * 100) : 0,
+      impressions: normalized.impressions,
+      clicks: normalized.clicks,
+      ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100) : 0,
+      cpm: normalized.impressions ? round((normalized.spend / normalized.impressions) * 1000) : 0,
+    };
+  }).sort((a, b) => b.spend - a.spend);
+  return { source: "meta", from, to, totalSpend: round(totalSpend), dimension, markets };
+}
+
 export async function getMetaSummary(from: string, to: string): Promise<MetaSummary> {
   const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
   const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
@@ -159,24 +258,7 @@ export async function getMetaSummary(from: string, to: string): Promise<MetaSumm
     purchaseValue: sum.purchaseValue + row.purchaseValue,
   }), { spend: 0, impressions: 0, clicks: 0, landingPageViews: 0, addToCart: 0, checkoutInitiated: 0, purchases: 0, purchaseValue: 0 });
 
-  const campaigns = campaignRows.map((row): MetaCampaign => {
-    const normalized = normalizeRow(row);
-    const spend = normalized.spend;
-    return {
-      id: row.campaign_id ?? row.campaign_name ?? "unknown",
-      name: row.campaign_name ?? "Unnamed campaign",
-      spend,
-      impressions: normalized.impressions,
-      clicks: normalized.clicks,
-      landingPageViews: normalized.landingPageViews,
-      purchases: normalized.purchases,
-      purchaseValue: normalized.purchaseValue,
-      ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100) : 0,
-      cpc: normalized.clicks ? round(spend / normalized.clicks) : 0,
-      roas: spend ? round(normalized.purchaseValue / spend) : 0,
-      cpa: normalized.purchases ? round(spend / normalized.purchases) : null,
-    };
-  }).sort((a, b) => b.spend - a.spend);
+  const campaigns = campaignRows.map((row) => performanceRow(row, "campaign")).sort((a, b) => b.spend - a.spend);
 
   return {
     source: "meta",

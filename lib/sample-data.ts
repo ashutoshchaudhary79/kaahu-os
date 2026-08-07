@@ -15,12 +15,3 @@ export const funnel = [
   { label: "Checkout started", value: "612", width: 4, note: "45.7% of carts" },
   { label: "Purchases", value: "187", width: 2, note: "30.6% of checkouts" },
 ];
-
-export type Campaign = { name: string; type: string; spend: string; ctr: string; cpc: string; purchases: string; roas: string; cpa: string; strong: boolean };
-export const campaigns: Campaign[] = [
-  { name: "Prospecting — tote collection", type: "Cold, interest stack", spend: "$6,180", ctr: "1.42%", cpc: "$1.28", purchases: "41", roas: "2.10×", cpa: "$150.73", strong: false },
-  { name: "Prospecting — lookalike 1%", type: "Cold, purchaser seed", spend: "$5,420", ctr: "1.68%", cpc: "$1.09", purchases: "39", roas: "2.44×", cpa: "$139.00", strong: false },
-  { name: "Broad — open targeting", type: "Cold, advantage+", spend: "$2,590", ctr: "1.21%", cpc: "$1.51", purchases: "16", roas: "1.78×", cpa: "$161.88", strong: false },
-  { name: "Retargeting — cart abandoners", type: "Warm, 14 day window", spend: "$2,340", ctr: "3.85%", cpc: "$0.61", purchases: "58", roas: "5.62×", cpa: "$40.34", strong: true },
-  { name: "Retargeting — site visitors 30d", type: "Warm, broad", spend: "$1,890", ctr: "2.91%", cpc: "$0.74", purchases: "33", roas: "4.87×", cpa: "$57.27", strong: true },
-];

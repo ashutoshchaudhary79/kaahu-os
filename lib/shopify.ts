@@ -9,10 +9,18 @@ type Money = {
 
 type ShopifyOrder = {
   id: string;
+  name: string;
   createdAt: string;
   cancelledAt: string | null;
   test: boolean;
+  displayFinancialStatus: string;
+  displayFulfillmentStatus: string;
+  sourceName: string;
+  currentSubtotalPriceSet: { shopMoney: Money };
+  currentTotalDiscountsSet: { shopMoney: Money };
   currentTotalPriceSet: { shopMoney: Money };
+  lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number }> };
+  shippingAddress: { city: string | null; provinceCode: string | null; countryCodeV2: string | null } | null;
 };
 
 type OrdersPage = {
@@ -50,6 +58,24 @@ export type ShopifySummary = {
   orderCount: number;
   aov: number;
   daily: DailyRevenue[];
+  orders: ShopifyOrderSummary[];
+};
+
+export type ShopifyOrderSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  itemQuantity: number;
+  subtotal: number;
+  discounts: number;
+  total: number;
+  financialStatus: string;
+  fulfillmentStatus: string;
+  channel: string;
+  products: string;
+  city: string;
+  region: string;
+  country: string;
 };
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
@@ -128,15 +154,29 @@ const ORDERS_QUERY = `#graphql
     orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT) {
       nodes {
         id
+        name
         createdAt
         cancelledAt
         test
+        displayFinancialStatus
+        displayFulfillmentStatus
+        sourceName
+        currentSubtotalPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        currentTotalDiscountsSet {
+          shopMoney { amount currencyCode }
+        }
         currentTotalPriceSet {
           shopMoney {
             amount
             currencyCode
           }
         }
+        lineItems(first: 100) {
+          nodes { title variantTitle quantity }
+        }
+        shippingAddress { city provinceCode countryCodeV2 }
       }
       pageInfo {
         hasNextPage
@@ -185,7 +225,10 @@ export async function getShopifySummary(from: string, to: string): Promise<Shopi
 
   if (!shop) throw new Error("Shopify did not return shop metadata");
 
-  const included = orders.filter((order) => !order.cancelledAt && !order.test);
+  const included = orders.filter((order) => {
+    const amount = Number(order.currentTotalPriceSet.shopMoney.amount);
+    return !order.cancelledAt && !order.test && Number.isFinite(amount) && amount > 0;
+  });
   const dailyMap = new Map<string, DailyRevenue>();
   let revenue = 0;
 
@@ -211,5 +254,24 @@ export async function getShopifySummary(from: string, to: string): Promise<Shopi
     orderCount,
     aov: orderCount ? roundMoney(revenue / orderCount) : 0,
     daily: Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    orders: included.map((order) => ({
+      id: order.id,
+      name: order.name,
+      createdAt: order.createdAt,
+      itemQuantity: order.lineItems.nodes.reduce((sum, item) => sum + item.quantity, 0),
+      subtotal: roundMoney(Number(order.currentSubtotalPriceSet.shopMoney.amount)),
+      discounts: roundMoney(Number(order.currentTotalDiscountsSet.shopMoney.amount)),
+      total: roundMoney(Number(order.currentTotalPriceSet.shopMoney.amount)),
+      financialStatus: order.displayFinancialStatus,
+      fulfillmentStatus: order.displayFulfillmentStatus,
+      channel: /^\d+$/.test(order.sourceName) ? "app" : order.sourceName,
+      products: order.lineItems.nodes.map((item) => {
+        const variant = item.variantTitle && item.variantTitle !== "Default Title" ? ` — ${item.variantTitle}` : "";
+        return `${item.title}${variant} × ${item.quantity}`;
+      }).join(", "),
+      city: order.shippingAddress?.city ?? "—",
+      region: order.shippingAddress?.provinceCode ?? "—",
+      country: order.shippingAddress?.countryCodeV2 ?? "—",
+    })).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   };
 }
