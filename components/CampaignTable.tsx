@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import type { DateRange } from "./DateRangePicker";
+import { CampaignDetailPanel, type CampaignDetailData } from "./CampaignDetailPanel";
 
 export type PerformanceRow = {
   id: string;
@@ -14,6 +15,8 @@ export type PerformanceRow = {
   roas: string;
   cpa: string;
   strong: boolean;
+  objective?: string;
+  role?: "tofu" | "mofu" | "sales";
   raw: { spend: number; ctr: number; cpc: number; purchases: number; roas: number; cpa: number | null };
 };
 
@@ -44,13 +47,36 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   const [loading, setLoading] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ key: "name" | keyof PerformanceRow["raw"]; direction: "asc" | "desc" }>({ key: "spend", direction: "desc" });
+  const [detailCampaign, setDetailCampaign] = useState<PerformanceRow | null>(null);
+  const [detail, setDetail] = useState<CampaignDetailData | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     setExpanded(new Set());
     setChildren({});
     setLoading(new Set());
     setErrors({});
+    setDetailCampaign(null);
   }, [range.from, range.to]);
+
+  const openCampaignDetail = async (campaign: PerformanceRow) => {
+    setDetailCampaign(campaign);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const params = new URLSearchParams({ campaignId: campaign.id, to: range.to });
+      const response = await fetch(`/api/meta/campaign-detail?${params}`, { cache: "no-store" });
+      const body = (await response.json()) as CampaignDetailData & { error?: string; detail?: string };
+      if (!response.ok) throw new Error(body.detail ?? body.error ?? "Campaign detail could not be loaded");
+      setDetail(body);
+    } catch (requestError) {
+      setDetailError(requestError instanceof Error ? requestError.message : "Campaign detail could not be loaded");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const toggle = async (level: ChildLevel, parent: PerformanceRow) => {
     const key = `${level}:${parent.id}`;
@@ -115,7 +141,12 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
       <td className="border-b border-rule px-3 py-3.5 font-medium">
         <div style={{ paddingLeft: `${depth * 22}px` }} className="relative">
           {depth > 0 && <span aria-hidden="true" className="absolute left-0 top-2 h-px w-3 bg-rule" />}
-          {level ? (
+          {level && depth === 0 ? (
+            <span className="inline-flex max-w-full items-start gap-2">
+              <button type="button" onClick={() => toggle(level, row)} aria-expanded={isOpen} aria-label={`${isOpen ? "Collapse" : "Expand"} ${row.name} ad sets`} className="mt-0.5 inline-block w-3 shrink-0 text-[10px] text-ink-faint transition-transform hover:text-accent focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"><span aria-hidden="true" className={`inline-block transition-transform ${isOpen ? "rotate-90" : ""}`}>▶</span></button>
+              <button type="button" onClick={() => openCampaignDetail(row)} className="text-left underline-offset-2 hover:text-accent hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">{row.name}</button>
+            </span>
+          ) : level ? (
             <button type="button" onClick={() => toggle(level, row)} aria-expanded={isOpen} className="inline-flex max-w-full items-start gap-2 text-left underline-offset-2 hover:text-accent focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
               <span aria-hidden="true" className={`mt-0.5 inline-block w-3 shrink-0 text-[10px] text-ink-faint transition-transform ${isOpen ? "rotate-90" : ""}`}>▶</span>
               <span>{row.name}</span>
@@ -139,7 +170,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   return (
     <section className="rounded border border-rule bg-white p-5 sm:p-6">
       <div className="mb-5 flex items-baseline justify-between gap-4">
-        <div><h2 className="text-[15px] font-semibold">Campaign breakdown</h2><p className="mt-1 text-xs text-ink-faint">Expand campaigns to view ad sets and ads</p></div>
+        <div><h2 className="text-[15px] font-semibold">Campaign breakdown</h2><p className="mt-1 text-xs text-ink-faint">Click a campaign name for detail · use triangles to expand</p></div>
         <span className="text-xs text-ink-faint">Sorted by spend</span>
       </div>
       <div className="overflow-x-auto">
@@ -169,6 +200,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
           </tbody>
         </table>
       </div>
+      <CampaignDetailPanel campaign={detailCampaign ? { id: detailCampaign.id, name: detailCampaign.name, objective: detailCampaign.objective, role: detailCampaign.role } : null} detail={detail} loading={detailLoading} error={detailError} to={range.to} onClose={() => setDetailCampaign(null)} />
     </section>
   );
 }

@@ -16,11 +16,29 @@ type ShopifyOrder = {
   displayFinancialStatus: string;
   displayFulfillmentStatus: string;
   sourceName: string;
+  discountCodes: string[];
+  app: { name: string } | null;
+  publication: { name: string } | null;
   currentSubtotalPriceSet: { shopMoney: Money };
   currentTotalDiscountsSet: { shopMoney: Money };
   currentTotalPriceSet: { shopMoney: Money };
   lineItems: { nodes: Array<{ title: string; variantTitle: string | null; quantity: number }> };
-  shippingAddress: { city: string | null; provinceCode: string | null; countryCodeV2: string | null } | null;
+  shippingAddress: { name: string | null; city: string | null; provinceCode: string | null; countryCodeV2: string | null } | null;
+  customerJourneySummary: {
+    ready: boolean;
+    daysToConversion: number | null;
+    firstVisit: ShopifyCustomerVisit | null;
+    lastVisit: ShopifyCustomerVisit | null;
+  } | null;
+};
+
+type ShopifyCustomerVisit = {
+  source: string;
+  sourceDescription: string | null;
+  referrerUrl: string | null;
+  landingPage: string | null;
+  referralCode: string | null;
+  utmParameters: { source: string | null; medium: string | null; campaign: string | null; content: string | null; term: string | null } | null;
 };
 
 type OrdersPage = {
@@ -72,6 +90,16 @@ export type ShopifyOrderSummary = {
   financialStatus: string;
   fulfillmentStatus: string;
   channel: string;
+  customer: string;
+  discountCodes: string[];
+  discountCode: string;
+  attributionSource: string;
+  attribution: {
+    ready: boolean;
+    daysToConversion: number | null;
+    firstVisit: ShopifyCustomerVisit | null;
+    lastVisit: ShopifyCustomerVisit | null;
+  } | null;
   products: string;
   city: string;
   region: string;
@@ -161,6 +189,29 @@ const ORDERS_QUERY = `#graphql
         displayFinancialStatus
         displayFulfillmentStatus
         sourceName
+        discountCodes
+        app { name }
+        publication { name }
+        customerJourneySummary {
+          ready
+          daysToConversion
+          firstVisit {
+            source
+            sourceDescription
+            referrerUrl
+            landingPage
+            referralCode
+            utmParameters { source medium campaign content term }
+          }
+          lastVisit {
+            source
+            sourceDescription
+            referrerUrl
+            landingPage
+            referralCode
+            utmParameters { source medium campaign content term }
+          }
+        }
         currentSubtotalPriceSet {
           shopMoney { amount currencyCode }
         }
@@ -176,7 +227,7 @@ const ORDERS_QUERY = `#graphql
         lineItems(first: 100) {
           nodes { title variantTitle quantity }
         }
-        shippingAddress { city provinceCode countryCodeV2 }
+        shippingAddress { name city provinceCode countryCodeV2 }
       }
       pageInfo {
         hasNextPage
@@ -199,6 +250,28 @@ function dateInTimezone(isoDate: string, timezone: string): string {
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  web: "Online Store",
+  pos: "Point of Sale",
+  shopify_draft_order: "Draft Order",
+  iphone: "Shopify Mobile (iPhone)",
+  android: "Shopify Mobile (Android)",
+  mobile_app: "Mobile App",
+};
+
+function orderChannel(order: ShopifyOrder): string {
+  const publication = order.publication?.name.trim();
+  if (publication) return publication;
+
+  const app = order.app?.name.trim();
+  if (app) return app;
+
+  const sourceName = order.sourceName.trim();
+  if (SOURCE_LABELS[sourceName]) return SOURCE_LABELS[sourceName];
+  if (/^\d+$/.test(sourceName)) return `Legacy app (${sourceName})`;
+  return sourceName || "Unknown source";
 }
 
 export async function getShopifySummary(from: string, to: string): Promise<ShopifySummary> {
@@ -264,7 +337,15 @@ export async function getShopifySummary(from: string, to: string): Promise<Shopi
       total: roundMoney(Number(order.currentTotalPriceSet.shopMoney.amount)),
       financialStatus: order.displayFinancialStatus,
       fulfillmentStatus: order.displayFulfillmentStatus,
-      channel: /^\d+$/.test(order.sourceName) ? "app" : order.sourceName,
+      channel: orderChannel(order),
+      customer: order.shippingAddress?.name?.trim() || "Guest / unavailable",
+      discountCodes: order.discountCodes,
+      discountCode: order.discountCodes.join(", ") || "—",
+      attributionSource: order.customerJourneySummary?.lastVisit?.utmParameters?.source
+        ?? order.customerJourneySummary?.lastVisit?.sourceDescription
+        ?? order.customerJourneySummary?.lastVisit?.source
+        ?? "Direct / unavailable",
+      attribution: order.customerJourneySummary,
       products: order.lineItems.nodes.map((item) => {
         const variant = item.variantTitle && item.variantTitle !== "Default Title" ? ` — ${item.variantTitle}` : "";
         return `${item.title}${variant} × ${item.quantity}`;

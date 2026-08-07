@@ -26,6 +26,10 @@ type MetaPage<T> = {
   error?: { message?: string; code?: number };
 };
 
+type MetaCampaignDefinition = { id: string; name: string; objective?: string };
+type MetaAdCreative = { id: string; name?: string; creative?: { id: string; name?: string; thumbnail_url?: string; image_url?: string } | null };
+export type FunnelRole = "tofu" | "mofu" | "sales";
+
 export type MetaDaily = {
   date: string;
   spend: number;
@@ -45,6 +49,8 @@ export type MetaCampaign = {
   impressions: number;
   clicks: number;
   landingPageViews: number;
+  addToCart: number;
+  checkoutInitiated: number;
   purchases: number;
   purchaseValue: number;
   ctr: number;
@@ -54,6 +60,21 @@ export type MetaCampaign = {
 };
 
 export type MetaBreakdownRow = MetaCampaign;
+
+export type MetaFunnelAd = {
+  id: string;
+  name: string;
+  campaignName: string;
+  objective: string;
+  role: FunnelRole;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  landingPageViews: number;
+  addToCart: number;
+  checkoutInitiated: number;
+  purchases: number;
+};
 
 export type MetaMarket = {
   name: string;
@@ -88,7 +109,17 @@ export type MetaSummary = {
   purchases: number;
   purchaseValue: number;
   daily: MetaDaily[];
-  campaigns: MetaCampaign[];
+  dailyAds: Array<{ date: string; ads: MetaBreakdownRow[] }>;
+  ads: MetaFunnelAd[];
+  campaigns: Array<MetaCampaign & { objective: string; role: FunnelRole }>;
+};
+
+export type MetaCampaignDetail = {
+  id: string;
+  from: string;
+  to: string;
+  daily: MetaDaily[];
+  ads: Array<{ id: string; name: string; spend: number; thumbnailUrl: string | null }>;
 };
 
 function requiredEnv(name: string): string {
@@ -114,6 +145,16 @@ function action(actions: MetaAction[] | undefined, canonical: string, fallbacks:
     if (values.has(fallback)) return values.get(fallback) ?? 0;
   }
   return 0;
+}
+
+function funnelRole(objective: string | undefined, campaignName: string): FunnelRole {
+  const value = objective?.toUpperCase() ?? "";
+  if (["OUTCOME_AWARENESS", "BRAND_AWARENESS", "REACH", "VIDEO_VIEWS"].includes(value)) return "tofu";
+  if (["OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES", "STORE_VISITS"].includes(value)) return "sales";
+  if (["OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT", "OUTCOME_LEADS", "OUTCOME_APP_PROMOTION", "LINK_CLICKS", "TRAFFIC", "POST_ENGAGEMENT", "LEAD_GENERATION"].includes(value)) return "mofu";
+  if (/awareness|tofu|reach|video/i.test(campaignName)) return "tofu";
+  if (/sales|sale|conversion|purchase|bofu|catalog/i.test(campaignName)) return "sales";
+  return "mofu";
 }
 
 function normalizeRow(row: InsightRow): MetaDaily {
@@ -181,6 +222,8 @@ function performanceRow(row: InsightRow, level: "campaign" | "adset" | "ad"): Me
     impressions: normalized.impressions,
     clicks: normalized.clicks,
     landingPageViews: normalized.landingPageViews,
+    addToCart: normalized.addToCart,
+    checkoutInitiated: normalized.checkoutInitiated,
     purchases: normalized.purchases,
     purchaseValue: normalized.purchaseValue,
     ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100) : 0,
@@ -207,6 +250,46 @@ export async function getMetaBreakdown(from: string, to: string, level: "adset" 
   });
   const rows = await fetchAll<InsightRow>(`${accountId}/insights`, params);
   return rows.map((row) => performanceRow(row, level)).sort((a, b) => b.spend - a.spend);
+}
+
+export async function getMetaCampaignDetail(campaignId: string, from: string, to: string): Promise<MetaCampaignDetail> {
+  const dailyParams = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level: "campaign",
+    fields: "spend,impressions,clicks,actions,action_values",
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    time_increment: "1",
+    limit: "500",
+  });
+  const adInsightParams = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level: "ad",
+    fields: "ad_id,ad_name,spend,impressions,clicks,actions,action_values",
+    filtering: JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }]),
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    limit: "500",
+  });
+  const creativeParams = new URLSearchParams({ fields: "id,name,creative{id,name,thumbnail_url,image_url}", limit: "500" });
+  const [dailyRows, adInsightRows, creativeRows] = await Promise.all([
+    fetchAll<InsightRow>(`${campaignId}/insights`, dailyParams),
+    fetchAll<InsightRow>(`${campaignId}/insights`, adInsightParams),
+    fetchAll<MetaAdCreative>(`${campaignId}/ads`, creativeParams),
+  ]);
+  const thumbnails = new Map(creativeRows.map((ad) => [ad.id, ad.creative?.thumbnail_url ?? ad.creative?.image_url ?? null]));
+  return {
+    id: campaignId,
+    from,
+    to,
+    daily: dailyRows.map(normalizeRow).sort((a, b) => a.date.localeCompare(b.date)),
+    ads: adInsightRows.map((row) => ({
+      id: row.ad_id ?? row.ad_name ?? "unknown",
+      name: row.ad_name ?? "Unnamed ad",
+      spend: normalizeRow(row).spend,
+      thumbnailUrl: thumbnails.get(row.ad_id ?? "") ?? null,
+    })).sort((a, b) => b.spend - a.spend),
+  };
 }
 
 export async function getMetaMarketSummary(from: string, to: string, dimension: "comscore" | "state"): Promise<MetaMarketSummary> {
@@ -241,9 +324,20 @@ export async function getMetaMarketSummary(from: string, to: string, dimension: 
 export async function getMetaSummary(from: string, to: string): Promise<MetaSummary> {
   const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
   const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
-  const [dailyRows, campaignRows] = await Promise.all([
+  const dailyAdParams = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level: "ad",
+    fields: "ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,actions,action_values",
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    time_increment: "1",
+    limit: "500",
+  });
+  const [dailyRows, campaignRows, dailyAdRows, campaignDefinitions] = await Promise.all([
     fetchAll<InsightRow>(`${accountId}/insights`, insightParams(from, to, "account")),
     fetchAll<InsightRow>(`${accountId}/insights`, insightParams(from, to, "campaign")),
+    fetchAll<InsightRow>(`${accountId}/insights`, dailyAdParams),
+    fetchAll<MetaCampaignDefinition>(`${accountId}/campaigns`, new URLSearchParams({ fields: "id,name,objective", limit: "500" })),
   ]);
 
   const daily = dailyRows.map(normalizeRow).sort((a, b) => a.date.localeCompare(b.date));
@@ -258,7 +352,49 @@ export async function getMetaSummary(from: string, to: string): Promise<MetaSumm
     purchaseValue: sum.purchaseValue + row.purchaseValue,
   }), { spend: 0, impressions: 0, clicks: 0, landingPageViews: 0, addToCart: 0, checkoutInitiated: 0, purchases: 0, purchaseValue: 0 });
 
-  const campaigns = campaignRows.map((row) => performanceRow(row, "campaign")).sort((a, b) => b.spend - a.spend);
+  const objectiveByCampaign = new Map(campaignDefinitions.map((campaign) => [campaign.id, campaign.objective ?? ""]));
+  const campaigns = campaignRows.map((row) => {
+    const objective = objectiveByCampaign.get(row.campaign_id ?? "") ?? "";
+    return { ...performanceRow(row, "campaign"), objective, role: funnelRole(objective, row.campaign_name ?? "") };
+  }).sort((a, b) => b.spend - a.spend);
+  const dailyAdMap = new Map<string, MetaBreakdownRow[]>();
+  for (const row of dailyAdRows) {
+    const ads = dailyAdMap.get(row.date_start) ?? [];
+    ads.push(performanceRow(row, "ad"));
+    dailyAdMap.set(row.date_start, ads);
+  }
+  const dailyAds = Array.from(dailyAdMap, ([date, ads]) => ({
+    date,
+    ads: ads.sort((a, b) => b.spend - a.spend).slice(0, 3),
+  })).sort((a, b) => a.date.localeCompare(b.date));
+  const adMap = new Map<string, MetaFunnelAd>();
+  for (const row of dailyAdRows) {
+    const normalized = normalizeRow(row);
+    const id = row.ad_id ?? row.ad_name ?? "unknown";
+    const current = adMap.get(id) ?? {
+      id,
+      name: row.ad_name ?? "Unnamed ad",
+      campaignName: row.campaign_name ?? "Unknown campaign",
+      objective: objectiveByCampaign.get(row.campaign_id ?? "") ?? "",
+      role: funnelRole(objectiveByCampaign.get(row.campaign_id ?? ""), row.campaign_name ?? ""),
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+      landingPageViews: 0,
+      addToCart: 0,
+      checkoutInitiated: 0,
+      purchases: 0,
+    };
+    current.spend = round(current.spend + normalized.spend);
+    current.impressions += normalized.impressions;
+    current.clicks += normalized.clicks;
+    current.landingPageViews += normalized.landingPageViews;
+    current.addToCart += normalized.addToCart;
+    current.checkoutInitiated += normalized.checkoutInitiated;
+    current.purchases += normalized.purchases;
+    adMap.set(id, current);
+  }
+  const ads = Array.from(adMap.values()).filter((ad) => ad.spend > 0);
 
   return {
     source: "meta",
@@ -274,6 +410,8 @@ export async function getMetaSummary(from: string, to: string): Promise<MetaSumm
     purchases: total.purchases,
     purchaseValue: round(total.purchaseValue),
     daily,
+    dailyAds,
+    ads,
     campaigns,
   };
 }
