@@ -9,20 +9,22 @@ export type PerformanceRow = {
   name: string;
   type: string;
   spend: string;
+  frequency: string;
   ctr: string;
   cpc: string;
+  cpm: string;
   purchases: string;
   roas: string;
   cpa: string;
   strong: boolean;
   objective?: string;
   role?: "tofu" | "mofu" | "sales";
-  raw: { spend: number; ctr: number; cpc: number; purchases: number; roas: number; cpa: number | null };
+  raw: { spend: number; frequency: number; ctr: number; cpc: number; cpm: number; purchases: number; roas: number; cpa: number | null };
 };
 
 type ApiRow = {
   id: string; name: string; spend: number; impressions: number; clicks: number;
-  purchases: number; ctr: number; cpc: number; roas: number; cpa: number | null;
+  purchases: number; frequency: number; ctr: number; cpc: number; cpm: number; roas: number; cpa: number | null;
 };
 type ChildLevel = "adset" | "ad";
 
@@ -32,13 +34,15 @@ const formatRow = (row: ApiRow): PerformanceRow => ({
   name: row.name,
   type: `${row.impressions.toLocaleString("en-US")} impressions · ${row.clicks.toLocaleString("en-US")} link clicks`,
   spend: money(row.spend),
+  frequency: row.frequency.toFixed(2),
   ctr: `${row.ctr.toFixed(2)}%`,
   cpc: money(row.cpc),
+  cpm: money(row.cpm),
   purchases: row.purchases.toLocaleString("en-US"),
   roas: `${row.roas.toFixed(2)}×`,
   cpa: row.cpa === null ? "—" : money(row.cpa),
   strong: row.roas >= 3,
-  raw: { spend: row.spend, ctr: row.ctr, cpc: row.cpc, purchases: row.purchases, roas: row.roas, cpa: row.cpa },
+  raw: { spend: row.spend, frequency: row.frequency, ctr: row.ctr, cpc: row.cpc, cpm: row.cpm, purchases: row.purchases, roas: row.roas, cpa: row.cpa },
 });
 
 export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[]; range: DateRange }) {
@@ -117,7 +121,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
 
   const cells = (row: PerformanceRow) => (
     <>
-      {[row.spend, row.ctr, row.cpc, row.purchases].map((value, index) => <td key={index} className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{value}</td>)}
+      {[row.spend, row.frequency, row.ctr, row.cpc, row.cpm, row.purchases].map((value, index) => <td key={index} className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{value}</td>)}
       <td className={`border-b border-rule px-3 py-3.5 text-right font-semibold tabular-nums ${row.strong ? "text-moss" : "text-brick"}`}>{row.roas}</td>
       <td className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{row.cpa}</td>
     </>
@@ -161,9 +165,9 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   };
 
   const statusRow = (key: string, depth: number) => {
-    if (loading.has(key)) return <tr><td colSpan={7} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>Loading…</td></tr>;
-    if (errors[key]) return <tr><td colSpan={7} className="border-b border-rule py-4 text-xs text-brick" style={{ paddingLeft: `${36 + depth * 22}px` }}>{errors[key]}</td></tr>;
-    if (children[key]?.length === 0) return <tr><td colSpan={7} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>No delivery in this date range.</td></tr>;
+    if (loading.has(key)) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>Loading…</td></tr>;
+    if (errors[key]) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-brick" style={{ paddingLeft: `${36 + depth * 22}px` }}>{errors[key]}</td></tr>;
+    if (children[key]?.length === 0) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>No delivery in this date range.</td></tr>;
     return null;
   };
 
@@ -174,14 +178,16 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
         <span className="text-xs text-ink-faint">Sorted by spend</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-[13px]">
+        <table className="w-full min-w-[940px] border-collapse text-[13px]">
           <thead><tr>{[
             { label: "Campaign / ad set / ad", key: "name" as const }, { label: "Spend", key: "spend" as const },
+            { label: "Frequency", key: "frequency" as const },
             { label: "CTR", key: "ctr" as const }, { label: "CPC", key: "cpc" as const },
+            { label: "CPM", key: "cpm" as const },
             { label: "Purchases", key: "purchases" as const }, { label: "ROAS", key: "roas" as const }, { label: "CPA", key: "cpa" as const },
           ].map((header, index) => <th key={header.key} className={`border-b border-rule px-3 pb-2.5 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}>{header.label}<span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
           <tbody>
-            {!campaigns.length && <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-faint">No campaigns had delivery in this date range.</td></tr>}
+            {!campaigns.length && <tr><td colSpan={9} className="px-3 py-12 text-center text-ink-faint">No campaigns had delivery in this date range.</td></tr>}
             {sortedRows(campaigns).map((campaign) => {
               const adsetKey = `adset:${campaign.id}`;
               return <Fragment key={campaign.id}>

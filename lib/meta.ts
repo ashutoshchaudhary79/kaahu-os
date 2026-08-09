@@ -15,6 +15,7 @@ type InsightRow = {
   region?: string;
   spend?: string;
   impressions?: string;
+  reach?: string;
   clicks?: string;
   actions?: MetaAction[];
   action_values?: MetaAction[];
@@ -47,6 +48,7 @@ export type MetaCampaign = {
   name: string;
   spend: number;
   impressions: number;
+  frequency: number;
   clicks: number;
   landingPageViews: number;
   addToCart: number;
@@ -55,6 +57,7 @@ export type MetaCampaign = {
   purchaseValue: number;
   ctr: number;
   cpc: number;
+  cpm: number;
   roas: number;
   cpa: number | null;
 };
@@ -198,7 +201,7 @@ function insightParams(from: string, to: string, level: "account" | "campaign") 
     time_range: JSON.stringify({ since: from, until: to }),
     level,
     fields: level === "campaign"
-      ? "campaign_id,campaign_name,spend,impressions,clicks,actions,action_values"
+      ? "campaign_id,campaign_name,spend,impressions,reach,clicks,actions,action_values"
       : "spend,impressions,clicks,actions,action_values",
     action_report_time: "conversion",
     use_account_attribution_setting: "true",
@@ -220,6 +223,7 @@ function performanceRow(row: InsightRow, level: "campaign" | "adset" | "ad"): Me
     name: identifiers[1] ?? `Unnamed ${level}`,
     spend,
     impressions: normalized.impressions,
+    frequency: Number(row.reach) ? round(normalized.impressions / Number(row.reach)) : 0,
     clicks: normalized.clicks,
     landingPageViews: normalized.landingPageViews,
     addToCart: normalized.addToCart,
@@ -228,6 +232,7 @@ function performanceRow(row: InsightRow, level: "campaign" | "adset" | "ad"): Me
     purchaseValue: normalized.purchaseValue,
     ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100) : 0,
     cpc: normalized.clicks ? round(spend / normalized.clicks) : 0,
+    cpm: normalized.impressions ? round((spend / normalized.impressions) * 1000) : 0,
     roas: spend ? round(normalized.purchaseValue / spend) : 0,
     cpa: normalized.purchases ? round(spend / normalized.purchases) : null,
   };
@@ -237,8 +242,8 @@ export async function getMetaBreakdown(from: string, to: string, level: "adset" 
   const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
   const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
   const fields = level === "adset"
-    ? "adset_id,adset_name,spend,impressions,clicks,actions,action_values"
-    : "ad_id,ad_name,spend,impressions,clicks,actions,action_values";
+    ? "adset_id,adset_name,spend,impressions,reach,clicks,actions,action_values"
+    : "ad_id,ad_name,spend,impressions,reach,clicks,actions,action_values";
   const params = new URLSearchParams({
     time_range: JSON.stringify({ since: from, until: to }),
     level,

@@ -9,6 +9,8 @@ import { MarketSpendPanel } from "./MarketSpendPanel";
 import { SpendRevenueChart } from "./SpendRevenueChart";
 import { OrderDetailsDrawer, type OrderSummary } from "./OrderDetailsDrawer";
 import { KpiDetailPanel, type KpiDetail } from "./KpiDetailPanel";
+import { Ga4Analytics, type Ga4Data } from "./Ga4Analytics";
+import { KlaviyoAnalytics, type KlaviyoData } from "./KlaviyoAnalytics";
 
 type ShopifyData = {
   from: string;
@@ -42,12 +44,14 @@ type MetaData = {
     spend: number;
     clicks: number;
     impressions: number;
+    frequency: number;
     landingPageViews: number;
     addToCart: number;
     checkoutInitiated: number;
     purchases: number;
     ctr: number;
     cpc: number;
+    cpm: number;
     roas: number;
     cpa: number | null;
     objective: string;
@@ -66,8 +70,12 @@ export function Dashboard() {
   const [range, setRange] = useState<DateRange>(() => DateRangePicker.defaultRange(30));
   const [shopify, setShopify] = useState<ShopifyData | null>(null);
   const [meta, setMeta] = useState<MetaData | null>(null);
+  const [ga4, setGa4] = useState<Ga4Data | null>(null);
+  const [klaviyo, setKlaviyo] = useState<KlaviyoData | null>(null);
   const [shopifyError, setShopifyError] = useState<string | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
+  const [ga4Error, setGa4Error] = useState<string | null>(null);
+  const [klaviyoError, setKlaviyoError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
@@ -77,6 +85,8 @@ export function Dashboard() {
     setLoading(true);
     setShopifyError(null);
     setMetaError(null);
+    setGa4Error(null);
+    setKlaviyoError(null);
 
     const load = async () => {
       const query = `from=${range.from}&to=${range.to}`;
@@ -96,6 +106,16 @@ export function Dashboard() {
         read<MetaData>(`/api/meta?${query}`).then(setMeta).catch((requestError: unknown) => {
           if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
             setMetaError(requestError instanceof Error ? requestError.message : "Meta data could not be loaded");
+          }
+        }),
+        read<Ga4Data>(`/api/ga4?${query}`).then(setGa4).catch((requestError: unknown) => {
+          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
+            setGa4Error(requestError instanceof Error ? requestError.message : "GA4 data could not be loaded");
+          }
+        }),
+        read<KlaviyoData>(`/api/klaviyo?${query}`).then(setKlaviyo).catch((requestError: unknown) => {
+          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
+            setKlaviyoError(requestError instanceof Error ? requestError.message : "Klaviyo data could not be loaded");
           }
         }),
       ]);
@@ -184,15 +204,17 @@ export function Dashboard() {
     name: campaign.name,
     type: `${campaign.impressions.toLocaleString("en-US")} impressions · ${campaign.clicks.toLocaleString("en-US")} link clicks`,
     spend: money(campaign.spend),
+    frequency: campaign.frequency.toFixed(2),
     ctr: `${campaign.ctr.toFixed(2)}%`,
     cpc: money(campaign.cpc),
+    cpm: money(campaign.cpm),
     purchases: campaign.purchases.toLocaleString("en-US"),
     roas: `${campaign.roas.toFixed(2)}×`,
     cpa: campaign.cpa === null ? "—" : money(campaign.cpa),
     objective: campaign.objective,
     role: campaign.role,
     strong: campaign.roas >= 3,
-    raw: { spend: campaign.spend, ctr: campaign.ctr, cpc: campaign.cpc, purchases: campaign.purchases, roas: campaign.roas, cpa: campaign.cpa },
+    raw: { spend: campaign.spend, frequency: campaign.frequency, ctr: campaign.ctr, cpc: campaign.cpc, cpm: campaign.cpm, purchases: campaign.purchases, roas: campaign.roas, cpa: campaign.cpa },
   })), [meta]);
 
   const attributionLookup = useMemo(() => {
@@ -208,21 +230,27 @@ export function Dashboard() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Kaahu</p>
           <h1 className="font-display mt-2 text-[2rem] font-medium leading-tight tracking-[-0.02em]">Performance dashboard</h1>
-          <p className="mt-1.5 text-[13px] text-ink-soft">Meta ads and Shopify, combined view</p>
+          <p className="mt-1.5 text-[13px] text-ink-soft">Shopify, Meta Ads, GA4, and Klaviyo · combined view</p>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-faint" aria-label="Connection status">
             <span className="uppercase tracking-[0.08em]">Connections</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${shopifyError ? "bg-brick" : shopify ? "bg-moss" : "bg-ink-faint"}`} />Shopify {shopifyError ? "unavailable" : shopify ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${metaError ? "bg-brick" : meta ? "bg-moss" : "bg-ink-faint"}`} />Meta Ads {metaError ? "unavailable" : meta ? "live" : "connecting"}</span>
+            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${ga4Error ? "bg-brick" : ga4 ? "bg-moss" : "bg-ink-faint"}`} />GA4 {ga4Error ? "unavailable" : ga4 ? "live" : "connecting"}</span>
+            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${klaviyoError ? "bg-brick" : klaviyo ? "bg-moss" : "bg-ink-faint"}`} />Klaviyo {klaviyoError ? "unavailable" : klaviyo ? "live" : "connecting"}</span>
           </div>
         </div>
         <DateRangePicker value={range} onChange={setRange} />
       </header>
 
-      {(shopifyError || metaError) && (
+      {(shopifyError || metaError || ga4Error || klaviyoError) && (
         <div role="alert" className="mt-6 rounded border border-brick/30 bg-brick/5 px-4 py-3 text-sm text-brick">
           {shopifyError && <>Shopify data is unavailable: {shopifyError}</>}
           {shopifyError && metaError && <br />}
           {metaError && <>Meta data is unavailable: {metaError}</>}
+          {(shopifyError || metaError) && ga4Error && <br />}
+          {ga4Error && <>GA4 data is unavailable: {ga4Error}</>}
+          {(shopifyError || metaError || ga4Error) && klaviyoError && <br />}
+          {klaviyoError && <>Klaviyo data is unavailable: {klaviyoError}</>}
         </div>
       )}
 
@@ -237,9 +265,11 @@ export function Dashboard() {
 
       <CampaignTable campaigns={campaigns} range={range} />
       <MarketSpendPanel range={range} />
+      {ga4 && <Ga4Analytics data={ga4} />}
+      {klaviyo && <KlaviyoAnalytics data={klaviyo} storeRevenue={shopify?.revenue ?? null} />}
 
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
-        Shopify and Meta figures are live. Meta conversions use the ad account&apos;s attribution settings; blended metrics are directional.
+        Shopify, Meta, GA4, and Klaviyo figures are live when connected. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.
       </footer>
       <KpiDetailPanel detail={activeKpi ? kpiDetails[activeKpi] ?? null : null} onClose={() => setActiveKpi(null)} from={range.from} to={range.to} timezone={shopify?.timezone ?? "Account timezones"} />
       {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={shopify.timezone} from={range.from} to={range.to} attributionLookup={attributionLookup} />}
