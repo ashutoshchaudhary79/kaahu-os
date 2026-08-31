@@ -33,6 +33,18 @@ function requiredEnv(name: "GA4_PROPERTY_ID" | "GA4_CLIENT_EMAIL" | "GA4_PRIVATE
   return value;
 }
 
+function privateKey() {
+  let value = requiredEnv("GA4_PRIVATE_KEY");
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1);
+  }
+  value = value.replace(/\\r?\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+  if (!value.includes("-----BEGIN PRIVATE KEY-----") || !value.includes("-----END PRIVATE KEY-----")) {
+    throw new Error("GA4_PRIVATE_KEY is not a valid PEM private key");
+  }
+  return value;
+}
+
 function base64Url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
 }
@@ -50,7 +62,7 @@ async function accessToken() {
   const unsigned = `${header}.${claim}`;
   const signer = createSign("RSA-SHA256");
   signer.update(unsigned);
-  const signature = signer.sign(requiredEnv("GA4_PRIVATE_KEY").replace(/\\n/g, "\n"));
+  const signature = signer.sign(privateKey());
   const assertion = `${unsigned}.${base64Url(signature)}`;
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",

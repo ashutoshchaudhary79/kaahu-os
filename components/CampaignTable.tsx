@@ -172,20 +172,33 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   };
 
   return (
-    <section className="rounded border border-rule bg-white p-5 sm:p-6">
+    <section className="rounded-xl border border-rule bg-surface p-4 sm:p-6">
       <div className="mb-5 flex items-baseline justify-between gap-4">
         <div><h2 className="text-[15px] font-semibold">Campaign breakdown</h2><p className="mt-1 text-xs text-ink-faint">Click a campaign name for detail · use triangles to expand</p></div>
         <span className="text-xs text-ink-faint">Sorted by spend</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="grid gap-3 md:hidden">
+        {!campaigns.length && <p className="py-10 text-center text-sm text-ink-faint">No campaigns had delivery in this date range.</p>}
+        {sortedRows(campaigns).map((campaign) => {
+          const key = `adset:${campaign.id}`;
+          const isOpen = expanded.has(key);
+          return <article key={campaign.id} className="rounded-lg border border-rule bg-white p-4">
+            <div className="flex items-start justify-between gap-3"><button type="button" onClick={() => openCampaignDetail(campaign)} className="min-h-11 text-left font-semibold leading-5 text-ink hover:text-accent">{campaign.name}<span className="mt-1 block text-[11px] font-normal text-ink-faint">{campaign.type}</span></button><span className={`font-display text-lg tabular-nums ${campaign.strong ? "text-moss" : "text-brick"}`}>{campaign.roas}</span></div>
+            <dl className="mt-3 grid grid-cols-3 gap-3 border-y border-rule py-3 text-xs"><div><dt className="text-ink-faint">Spend</dt><dd className="mt-1 font-semibold tabular-nums text-orange">{campaign.spend}</dd></div><div><dt className="text-ink-faint">Purchases</dt><dd className="mt-1 font-semibold tabular-nums">{campaign.purchases}</dd></div><div><dt className="text-ink-faint">CPA</dt><dd className="mt-1 font-semibold tabular-nums">{campaign.cpa}</dd></div></dl>
+            <button type="button" onClick={() => toggle("adset", campaign)} aria-expanded={isOpen} className="mt-2 min-h-11 w-full text-left text-xs font-semibold text-accent">{isOpen ? "Hide ad sets and metrics" : "Show ad sets and more metrics"} <span aria-hidden="true">{isOpen ? "↑" : "↓"}</span></button>
+            {isOpen && <div className="border-t border-rule pt-3 text-xs"><dl className="grid grid-cols-3 gap-3"><div><dt className="text-ink-faint">CTR</dt><dd>{campaign.ctr}</dd></div><div><dt className="text-ink-faint">CPC</dt><dd>{campaign.cpc}</dd></div><div><dt className="text-ink-faint">CPM</dt><dd>{campaign.cpm}</dd></div></dl>{loading.has(key) && <p className="mt-3 text-ink-faint">Loading ad sets…</p>}{errors[key] && <p className="mt-3 text-brick">{errors[key]}</p>}{children[key]?.map((child) => <div key={child.id} className="mt-3 flex justify-between gap-3 border-t border-rule pt-3"><span>{child.name}</span><span className="tabular-nums">{child.spend} · {child.roas}</span></div>)}</div>}
+          </article>;
+        })}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[940px] border-collapse text-[13px]">
-          <thead><tr>{[
+          <thead className="sticky top-0 z-10 bg-surface"><tr>{[
             { label: "Campaign / ad set / ad", key: "name" as const }, { label: "Spend", key: "spend" as const },
             { label: "Frequency", key: "frequency" as const },
             { label: "CTR", key: "ctr" as const }, { label: "CPC", key: "cpc" as const },
             { label: "CPM", key: "cpm" as const },
             { label: "Purchases", key: "purchases" as const }, { label: "ROAS", key: "roas" as const }, { label: "CPA", key: "cpa" as const },
-          ].map((header, index) => <th key={header.key} className={`border-b border-rule px-3 pb-2.5 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}>{header.label}<span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
+          ].map((header, index) => <th key={header.key} aria-sort={sort.key === header.key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className={`border-b border-rule px-3 pb-2.5 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "sticky left-0 z-20 bg-surface text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`min-h-11 inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}>{header.label}<span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
           <tbody>
             {!campaigns.length && <tr><td colSpan={9} className="px-3 py-12 text-center text-ink-faint">No campaigns had delivery in this date range.</td></tr>}
             {sortedRows(campaigns).map((campaign) => {

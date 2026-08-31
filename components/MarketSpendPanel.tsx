@@ -68,7 +68,7 @@ export function MarketSpendPanel({ range }: { range: DateRange }) {
   ];
 
   return (
-    <section className="mt-8 rounded border border-rule bg-white p-5 sm:p-6">
+    <section className="rounded-xl border border-rule bg-surface p-4 sm:p-6">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2"><h2 className="text-[15px] font-semibold">Geographic spend</h2><span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-accent">All campaigns</span></div>
@@ -87,7 +87,20 @@ export function MarketSpendPanel({ range }: { range: DateRange }) {
       {!loading && !error && !sorted.length && <div className="py-16 text-center text-sm text-ink-faint">No {label} had delivery in this date range.</div>}
 
       {!loading && !error && sorted.length > 0 && <>
-        <div className={`overflow-x-auto ${showAll ? "max-h-[560px] overflow-y-auto rounded border border-rule" : ""}`}>
+        <div className="grid gap-2 md:hidden">{visible.map((market) => <article key={market.name} className="rounded-lg border border-rule bg-white p-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-3 border-b border-rule pb-3">
+            <strong className="truncate text-sm">{market.name}</strong>
+            <span className="font-semibold tabular-nums text-orange">{money(market.spend)}</span>
+            <span className="w-12 text-right text-xs font-medium tabular-nums text-ink-soft">{market.spendShare.toFixed(1)}%</span>
+          </div>
+          <dl className="mt-3 grid grid-cols-4 gap-2 text-[11px]">
+            <div className="col-span-2"><dt className="text-ink-faint">Impressions</dt><dd className="mt-1 font-medium tabular-nums">{market.impressions.toLocaleString("en-US")}</dd></div>
+            <div className="col-span-2"><dt className="text-ink-faint">Link clicks</dt><dd className="mt-1 font-medium tabular-nums">{market.clicks.toLocaleString("en-US")}</dd></div>
+            <div className="col-span-2"><dt className="text-ink-faint">CTR</dt><dd className="mt-1 font-medium tabular-nums">{market.ctr.toFixed(2)}%</dd></div>
+            <div className="col-span-2"><dt className="text-ink-faint">CPM</dt><dd className="mt-1 font-medium tabular-nums">{money(market.cpm)}</dd></div>
+          </dl>
+        </article>)}</div>
+        <div className={`hidden overflow-x-auto md:block ${showAll ? "max-h-[560px] overflow-y-auto rounded border border-rule" : ""}`}>
           <table className="w-full min-w-[780px] border-collapse text-[13px]">
             <thead className={showAll ? "sticky top-0 z-10 bg-white shadow-[0_1px_0_#e4e1d8]" : ""}><tr>{headers.map((header, index) => <th key={header.key} className={`border-b border-rule px-3 pb-2.5 pt-2 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}>{header.label}<span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
             <tbody>{visible.map((market) => <tr key={market.name} className="last:[&_td]:border-b-0 hover:bg-paper/70">

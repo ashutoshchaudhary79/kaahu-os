@@ -59,31 +59,30 @@ export function SpendRevenueChart({ revenueDaily, spendDaily, dailyAds, from, to
   const activeAds = activeDate ? dailyAds.find((row) => row.date === activeDate)?.ads ?? [] : [];
 
   return (
-    <article className="rounded border border-rule bg-white p-5 sm:p-6">
-      <PanelHeading title="Spend vs revenue" note="Hover a point · click to pin" />
+    <article className="rounded-xl border border-rule bg-surface p-4 sm:p-6">
+      <PanelHeading title="Spend vs revenue" note="Select a day for details" />
       <div className="mb-3 flex h-4 justify-end gap-4 text-[11px] text-ink-soft">
         <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-accent" />Revenue</span>
         <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-brick" />Spend</span>
       </div>
       {loading ? (
-        <div className="flex aspect-[680/250] items-center justify-center text-sm text-ink-faint">Loading Shopify revenue…</div>
+        <div className="aspect-[680/250] animate-pulse rounded-lg bg-rule/45" aria-label="Loading spend and revenue chart" />
       ) : (
-        <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_190px]" onMouseLeave={() => { if (!pinnedDate) setHoveredDate(null); }}>
+        <div onMouseLeave={() => { if (!pinnedDate) setHoveredDate(null); }}>
           <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Interactive daily Shopify revenue and Meta spend chart" className="h-auto w-full overflow-visible">
             {ticks.map((tick) => {
               const y = yAt(tick);
               return <g key={tick}><line x1={chart.left} y1={y} x2={chart.width - chart.right} y2={y} stroke="#e4e1d8" /><text x={chart.left - 9} y={y + 4} textAnchor="end" className="fill-ink-faint text-[10px]">{moneyTick(tick)}</text></g>;
             })}
-            <polygon points={`${chart.left},${chart.height - chart.bottom} ${makePoints(revenueValues)} ${chart.width - chart.right},${chart.height - chart.bottom}`} fill="rgba(122,106,82,.08)" />
-            <polyline points={makePoints(revenueValues)} fill="none" stroke="#7a6a52" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-            <polyline points={makePoints(spendValues)} fill="none" stroke="#a8503d" strokeWidth="1.6" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+            <polyline points={makePoints(revenueValues)} fill="none" stroke="#278060" strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
+            <polyline points={makePoints(spendValues)} fill="none" stroke="#c4663d" strokeWidth="2" strokeDasharray="6 5" vectorEffect="non-scaling-stroke" />
             {data.map((point, index) => {
               const selected = activeDate === point.date;
               const width = plotWidth / Math.max(data.length - 1, 1);
               return <g key={point.date}>
                 {selected && <line x1={xAt(index)} y1={chart.top} x2={xAt(index)} y2={chart.top + plotHeight} stroke="#b8b2a6" strokeDasharray="2 3" />}
-                <circle cx={xAt(index)} cy={yAt(point.revenue)} r={selected ? 4 : 2.5} fill="#7a6a52" />
-                <circle cx={xAt(index)} cy={yAt(point.spend)} r={selected ? 4 : 2.5} fill="#a8503d" />
+                <circle cx={xAt(index)} cy={yAt(point.revenue)} r={selected ? 4 : 2.5} fill="#278060" />
+                <circle cx={xAt(index)} cy={yAt(point.spend)} r={selected ? 4 : 2.5} fill="#c4663d" />
                 <rect x={xAt(index) - width / 2} y={chart.top} width={width} height={plotHeight} fill="transparent" role="button" tabIndex={0} aria-label={`${longDate(point.date)}: ${money(point.revenue, currency)} revenue, ${money(point.spend)} spend, ${point.orders} orders`} className="cursor-pointer focus:outline-none" onMouseEnter={() => setHoveredDate(point.date)} onFocus={() => setHoveredDate(point.date)} onBlur={() => { if (!pinnedDate) setHoveredDate(null); }} onClick={() => setPinnedDate((current) => current === point.date ? null : point.date)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setPinnedDate((current) => current === point.date ? null : point.date); } }} />
               </g>;
             })}
@@ -91,21 +90,21 @@ export function SpendRevenueChart({ revenueDaily, spendDaily, dailyAds, from, to
             <text x={chart.width - chart.right} y={chart.height - 8} textAnchor="end" className="fill-ink-faint text-[10px]">{shortDate(to)}</text>
           </svg>
 
-          <div className="min-h-[180px] rounded border border-rule bg-paper/45 p-3">
-          {active ? <>
+          {active && <div className="mt-4 rounded-lg border border-rule bg-paper/45 p-4" aria-live="polite">
+          <>
             <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold">{longDate(active.date)}</p>{pinnedDate === active.date && <span className="text-[9px] font-semibold uppercase tracking-wide text-accent">Pinned</span>}</div>
             <table className="mt-2 w-full text-xs"><tbody>
               <tr><td className="py-1 text-ink-faint">Revenue</td><td className="py-1 text-right font-medium tabular-nums">{money(active.revenue, currency)}</td></tr>
               <tr><td className="py-1 text-ink-faint">Spend</td><td className="py-1 text-right font-medium tabular-nums">{money(active.spend)}</td></tr>
-              <tr><td className="py-1 text-ink-faint">Orders</td><td className="py-1 text-right font-medium tabular-nums">{active.orders.toLocaleString("en-US")}</td></tr>
+              <tr><td className="py-1 text-ink-faint">Orders</td><td className="py-1 text-right font-medium tabular-nums">{active.orders.toLocaleString("en-US")}</td></tr><tr><td className="py-1 text-ink-faint">Blended ROAS</td><td className="py-1 text-right font-medium tabular-nums">{active.spend ? `${(active.revenue / active.spend).toFixed(2)}×` : "—"}</td></tr>
             </tbody></table>
             <div className="mt-2 border-t border-rule pt-2">
               <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-ink-faint">Top 3 ads by spend</p>
               {activeAds.length === 0 && <p className="mt-2 text-xs text-ink-faint">No ad spend</p>}
               {activeAds.length > 0 && <table className="mt-1.5 w-full table-fixed text-xs"><tbody>{activeAds.map((ad) => <tr key={ad.id}><td className="truncate py-1 pr-2" title={ad.name}>{ad.name}</td><td className="w-[62px] py-1 text-right tabular-nums">{money(ad.spend)}</td></tr>)}</tbody></table>}
             </div>
-          </> : <p className="text-xs leading-5 text-ink-faint">Hover or focus a chart point to inspect that day. Click to keep it pinned.</p>}
-          </div>
+          </>
+          </div>}
         </div>
       )}
     </article>

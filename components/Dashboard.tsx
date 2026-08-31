@@ -79,6 +79,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
+  const [activeReport, setActiveReport] = useState<"campaigns" | "geography" | "acquisition" | "retention">("campaigns");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -224,14 +225,42 @@ export function Dashboard() {
     return Object.fromEntries(entries);
   }, [meta]);
 
+  const sources = [
+    { name: "Shopify", data: shopify, error: shopifyError },
+    { name: "Meta Ads", data: meta, error: metaError },
+    { name: "GA4", data: ga4, error: ga4Error },
+    { name: "Klaviyo", data: klaviyo, error: klaviyoError },
+  ];
+  const connectedCount = sources.filter((source) => source.data && !source.error).length;
+  const primaryInvalid = Boolean(shopifyError || metaError);
+  const insights = useMemo(() => {
+    const items: Array<{ title: string; body: string }> = [];
+    if (meta?.campaigns.length) {
+      const leader = [...meta.campaigns].sort((a, b) => b.spend - a.spend)[0];
+      const share = meta.spend ? (leader.spend / meta.spend) * 100 : 0;
+      items.push({ title: "Spend concentration", body: `${leader.name} accounts for ${share.toFixed(0)}% of Meta spend in this range.` });
+    }
+    if (funnel.length > 1) {
+      const drops = funnel.slice(1).map((step, index) => ({ label: `${funnel[index].label} to ${step.label}`, rate: Number(step.note?.split("%")[0] ?? 0) }));
+      const largest = drops.sort((a, b) => a.rate - b.rate)[0];
+      items.push({ title: "Largest funnel drop-off", body: `${largest.label} converts at ${largest.rate.toFixed(1)}% of the prior stage.` });
+    }
+    if (blendedRoas !== null) items.push({ title: "Blended efficiency", body: `Shopify revenue is ${blendedRoas.toFixed(2)}× Meta spend for the selected period.` });
+    return items.slice(0, 3);
+  }, [meta, funnel, blendedRoas]);
+
   return (
-    <main className="mx-auto min-h-screen max-w-[1224px] px-5 pb-20 sm:px-8">
-      <header className="flex flex-col gap-6 border-b border-rule py-8 sm:py-10 lg:flex-row lg:items-end lg:justify-between">
+    <main className="mx-auto min-h-screen max-w-[1360px] overflow-x-clip px-4 pb-20 sm:px-6 xl:px-10">
+      <header className="flex flex-col gap-6 border-b border-rule py-6 sm:py-8 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Kaahu</p>
-          <h1 className="font-display mt-2 text-[2rem] font-medium leading-tight tracking-[-0.02em]">Performance dashboard</h1>
+          <h1 className="font-display mt-2 text-[2rem] font-medium leading-tight tracking-[-0.03em] sm:text-[2.45rem]">Performance dashboard</h1>
           <p className="mt-1.5 text-[13px] text-ink-soft">Shopify, Meta Ads, GA4, and Klaviyo · combined view</p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-faint" aria-label="Connection status">
+          <details className="mt-3 sm:hidden">
+            <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-ink-soft">{loading ? "Connecting sources…" : `${connectedCount} of 4 sources connected`}</summary>
+            <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} />{source.name} {source.error ? "unavailable" : source.data ? "connected" : "connecting"}</span>)}</div>
+          </details>
+          <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-faint sm:flex" aria-label="Connection status" aria-live="polite">
             <span className="uppercase tracking-[0.08em]">Connections</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${shopifyError ? "bg-brick" : shopify ? "bg-moss" : "bg-ink-faint"}`} />Shopify {shopifyError ? "unavailable" : shopify ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${metaError ? "bg-brick" : meta ? "bg-moss" : "bg-ink-faint"}`} />Meta Ads {metaError ? "unavailable" : meta ? "live" : "connecting"}</span>
@@ -243,30 +272,38 @@ export function Dashboard() {
       </header>
 
       {(shopifyError || metaError || ga4Error || klaviyoError) && (
-        <div role="alert" className="mt-6 rounded border border-brick/30 bg-brick/5 px-4 py-3 text-sm text-brick">
-          {shopifyError && <>Shopify data is unavailable: {shopifyError}</>}
-          {shopifyError && metaError && <br />}
-          {metaError && <>Meta data is unavailable: {metaError}</>}
-          {(shopifyError || metaError) && ga4Error && <br />}
-          {ga4Error && <>GA4 data is unavailable: {ga4Error}</>}
-          {(shopifyError || metaError || ga4Error) && klaviyoError && <br />}
-          {klaviyoError && <>Klaviyo data is unavailable: {klaviyoError}</>}
+        <div role={primaryInvalid ? "alert" : "status"} className={`mt-6 rounded-lg border px-4 py-3 text-sm ${primaryInvalid ? "border-brick/30 bg-brick/5 text-brick" : "border-amber/30 bg-surface text-ink"}`}>
+          <p className="font-semibold">{sources.filter((source) => source.error).map((source) => source.name).join(" and ")} unavailable</p>
+          <p className="mt-0.5 text-xs text-ink-soft">{primaryInvalid ? "Some primary dashboard calculations may be unavailable." : "Other dashboard data is current."}</p>
+          <details className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Technical details</summary><div className="mt-2 text-ink-soft">{sources.filter((source) => source.error).map((source) => <p key={source.name}>{source.name}: {source.error}</p>)}</div></details>
         </div>
       )}
 
-      <section aria-label="Key performance indicators" aria-busy={loading} className="my-8 grid overflow-hidden rounded border border-rule bg-white sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <section aria-label="Key performance indicators" aria-busy={loading} className="my-6 grid grid-cols-1 gap-3 min-[340px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         {kpis.map((kpi) => <KpiCard key={kpi.label} {...kpi} />)}
       </section>
 
-      <section className="mb-8 grid gap-6">
-        <SpendRevenueChart revenueDaily={shopify?.daily ?? []} spendDaily={meta?.daily ?? []} dailyAds={meta?.dailyAds ?? []} from={range.from} to={range.to} loading={loading} currency={shopify?.currency} />
-        <MetaFunnel steps={funnel} ads={meta?.ads ?? []} />
+      {insights.length > 0 && <section aria-labelledby="insights-title" className="mb-6 rounded-xl bg-accent px-5 py-5 text-white sm:px-6">
+        <div className="flex items-center justify-between gap-4"><h2 id="insights-title" className="font-display text-xl">Executive insights</h2><span className="text-[10px] uppercase tracking-[.12em] text-white/65">Selected period</span></div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">{insights.map((insight, index) => <article key={insight.title} className={index ? "hidden border-white/20 sm:block sm:border-l sm:pl-5" : ""}><h3 className="text-xs font-semibold uppercase tracking-[.06em] text-white/70">{insight.title}</h3><p className="mt-1.5 text-sm leading-5">{insight.body}</p></article>)}</div>
+        {insights.length > 1 && <details className="mt-3 sm:hidden"><summary className="min-h-11 cursor-pointer content-center text-xs font-semibold">Show {insights.length - 1} more insights</summary><div className="grid gap-4 border-t border-white/20 pt-4">{insights.slice(1).map((insight) => <article key={insight.title}><h3 className="text-xs font-semibold uppercase tracking-[.06em] text-white/70">{insight.title}</h3><p className="mt-1 text-sm">{insight.body}</p></article>)}</div></details>}
+      </section>}
+
+      <section aria-label="Performance overview" className="mb-8 grid items-start gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-7 xl:col-span-8"><SpendRevenueChart revenueDaily={shopify?.daily ?? []} spendDaily={meta?.daily ?? []} dailyAds={meta?.dailyAds ?? []} from={range.from} to={range.to} loading={loading} currency={shopify?.currency} /></div>
+        <div className="lg:col-span-5 xl:col-span-4"><MetaFunnel steps={funnel} ads={meta?.ads ?? []} /></div>
       </section>
 
-      <CampaignTable campaigns={campaigns} range={range} />
-      <MarketSpendPanel range={range} />
-      {ga4 && <Ga4Analytics data={ga4} />}
-      {klaviyo && <KlaviyoAnalytics data={klaviyo} storeRevenue={shopify?.revenue ?? null} />}
+      <section aria-labelledby="reports-title">
+        <h2 id="reports-title" className="sr-only">Detailed reporting</h2>
+        <div className="mb-4 overflow-x-auto" role="tablist" aria-label="Detailed reports"><div className="inline-flex min-w-max gap-1 rounded-xl border border-rule bg-surface p-1">{([['campaigns','Campaigns'],['geography','Geography'],['acquisition','Acquisition'],['retention','Retention']] as const).map(([key,label]) => <button key={key} role="tab" aria-selected={activeReport === key} onClick={() => setActiveReport(key)} className={`min-h-11 rounded-lg px-4 text-sm font-semibold transition-colors ${activeReport === key ? "bg-accent text-white" : "text-ink-soft hover:bg-paper"}`}>{label}</button>)}</div></div>
+        <div role="tabpanel">
+          {activeReport === "campaigns" && <CampaignTable campaigns={campaigns} range={range} />}
+          {activeReport === "geography" && <MarketSpendPanel range={range} />}
+          {activeReport === "acquisition" && (ga4 ? <Ga4Analytics data={ga4} /> : <div className="rounded-xl border border-rule bg-surface p-8 text-sm text-ink-soft">{ga4Error ? "GA4 is unavailable for this range." : "Loading acquisition data…"}</div>)}
+          {activeReport === "retention" && (klaviyo ? <KlaviyoAnalytics data={klaviyo} storeRevenue={shopify?.revenue ?? null} /> : <div className="rounded-xl border border-rule bg-surface p-8 text-sm text-ink-soft">{klaviyoError ? "Klaviyo is unavailable for this range." : "Loading retention data…"}</div>)}
+        </div>
+      </section>
 
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
         Shopify, Meta, GA4, and Klaviyo figures are live when connected. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.
