@@ -6,10 +6,25 @@ declare global {
 }
 
 function createPool() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const configuredDatabaseUrl = process.env.DATABASE_URL;
 
-  if (!databaseUrl) {
+  if (!configuredDatabaseUrl) {
     throw new Error("DATABASE_URL is not configured");
+  }
+
+  // Environment dashboards are often populated by pasting a complete .env
+  // line rather than only its value. Accept both forms while keeping the
+  // credential server-side and out of error messages.
+  let databaseUrl = configuredDatabaseUrl.trim();
+  if (databaseUrl.startsWith("DATABASE_URL=")) {
+    databaseUrl = databaseUrl.slice("DATABASE_URL=".length).trim();
+  }
+  if (
+    databaseUrl.length >= 2 &&
+    ((databaseUrl.startsWith('"') && databaseUrl.endsWith('"')) ||
+      (databaseUrl.startsWith("'") && databaseUrl.endsWith("'")))
+  ) {
+    databaseUrl = databaseUrl.slice(1, -1);
   }
 
   const connectionUrl = new URL(databaseUrl);
