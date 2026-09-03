@@ -33,9 +33,13 @@ function createPool() {
   return new Pool({
     connectionString: connectionUrl.toString(),
     ssl: { rejectUnauthorized: false },
-    max: 10,
-    idleTimeoutMillis: 30_000,
+    // Vercel can run several isolated function instances for one page load.
+    // Keep each instance deliberately small so Supabase's serverless pool is
+    // not exhausted when the four dashboard APIs and background sync overlap.
+    max: process.env.VERCEL ? 1 : 5,
+    idleTimeoutMillis: process.env.VERCEL ? 5_000 : 30_000,
     connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: true,
   });
 }
 
