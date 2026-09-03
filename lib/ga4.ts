@@ -27,6 +27,14 @@ export type Ga4Summary = {
   landingPages: Array<{ page: string; sessions: number; users: number; engagementRate: number; bounceRate: number; viewItem: number; addToCart: number; beginCheckout: number; purchases: number }>;
 };
 
+export type Ga4DailyBreakdowns = {
+  funnel: Array<{ date: string; event: string; events: number }>;
+  devices: Array<{ date: string; device: string; sessions: number; users: number; purchases: number; revenue: number }>;
+  landingPages: Array<{ date: string; page: string; sessions: number; users: number; engagementRate: number; bounceRate: number; viewItem: number; addToCart: number; beginCheckout: number; purchases: number }>;
+};
+
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 function requiredEnv(name: "GA4_PROPERTY_ID" | "GA4_CLIENT_EMAIL" | "GA4_PRIVATE_KEY") {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is not configured`);
@@ -77,20 +85,55 @@ async function accessToken() {
 
 async function runReport(token: string, request: ReportRequest) {
   const propertyId = requiredEnv("GA4_PROPERTY_ID").replace(/^properties\//, "");
-  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(request),
-    cache: "no-store",
-  });
-  const body = (await response.json()) as ReportResponse;
-  if (!response.ok || body.error) throw new Error(body.error?.message ?? `GA4 report failed (${response.status})`);
-  return body.rows ?? [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
+    const body = (await response.json()) as ReportResponse;
+    const exhausted = response.status === 429 || /RESOURCE_EXHAUSTED/i.test(body.error?.message ?? "");
+    if (exhausted && attempt < 4) {
+      await sleep(2_000 * (2 ** attempt));
+      continue;
+    }
+    if (!response.ok || body.error) throw new Error(body.error?.message ?? `GA4 report failed (${response.status})`);
+    return body.rows ?? [];
+  }
+  throw new Error("GA4 quota remained exhausted after retries");
 }
 
 const numberAt = (row: ReportRow, index: number) => Number(row.metricValues?.[index]?.value ?? 0);
 const textAt = (row: ReportRow, index: number) => row.dimensionValues?.[index]?.value ?? "(not set)";
 const eventFilter = { filter: { fieldName: "eventName", inListFilter: { values: [...FUNNEL_EVENTS] } } };
+const ga4Date = (value: string) => value.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+
+export async function getGa4DailyBreakdowns(from: string, to: string): Promise<Ga4DailyBreakdowns> {
+  const token = await accessToken();
+  const dateRanges = [{ startDate: from, endDate: to }];
+  const [funnelRows, deviceRows, landingRows, landingEventRows] = await Promise.all([
+    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "eventName" }], metrics: [{ name: "eventCount" }], dimensionFilter: eventFilter, limit: "100000" }),
+    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "deviceCategory" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "transactions" }, { name: "purchaseRevenue" }], limit: "100000" }),
+    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "landingPage" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "engagementRate" }, { name: "bounceRate" }], limit: "100000" }),
+    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "landingPage" }, { name: "eventName" }], metrics: [{ name: "eventCount" }], dimensionFilter: eventFilter, limit: "100000" }),
+  ]);
+  const eventsByPageDay = new Map<string, Record<string, number>>();
+  for (const row of landingEventRows) {
+    const key = `${textAt(row, 0)}\0${textAt(row, 1)}`;
+    const events = eventsByPageDay.get(key) ?? {};
+    events[textAt(row, 2)] = numberAt(row, 0);
+    eventsByPageDay.set(key, events);
+  }
+  return {
+    funnel: funnelRows.map((row) => ({ date: ga4Date(textAt(row, 0)), event: textAt(row, 1), events: numberAt(row, 0) })),
+    devices: deviceRows.map((row) => ({ date: ga4Date(textAt(row, 0)), device: textAt(row, 1), sessions: numberAt(row, 0), users: numberAt(row, 1), purchases: numberAt(row, 2), revenue: numberAt(row, 3) })),
+    landingPages: landingRows.map((row) => {
+      const rawDate = textAt(row, 0); const page = textAt(row, 1); const events = eventsByPageDay.get(`${rawDate}\0${page}`) ?? {};
+      return { date: ga4Date(rawDate), page, sessions: numberAt(row, 0), users: numberAt(row, 1), engagementRate: numberAt(row, 2), bounceRate: numberAt(row, 3), viewItem: events.view_item ?? 0, addToCart: events.add_to_cart ?? 0, beginCheckout: events.begin_checkout ?? 0, purchases: events.purchase ?? 0 };
+    }),
+  };
+}
 
 export async function getGa4Summary(from: string, to: string): Promise<Ga4Summary> {
   const token = await accessToken();
@@ -107,7 +150,7 @@ export async function getGa4Summary(from: string, to: string): Promise<Ga4Summar
   ]);
 
   const dailyChannels = dailyRows.map((row) => ({
-    date: textAt(row, 0).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"), channel: textAt(row, 1), visitorType: textAt(row, 2),
+    date: ga4Date(textAt(row, 0)), channel: textAt(row, 1), visitorType: textAt(row, 2),
     sessions: numberAt(row, 0), users: numberAt(row, 1), newUsers: numberAt(row, 2),
   }));
   const channelMap = new Map(channelRows.map((row) => [textAt(row, 0), row]));

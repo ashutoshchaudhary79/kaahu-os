@@ -98,6 +98,30 @@ export type MetaMarketSummary = {
   markets: MetaMarket[];
 };
 
+export type MetaCampaignDaily = MetaDaily & {
+  campaignId: string;
+  campaignName: string;
+  objective: string | null;
+};
+
+export type MetaMarketDaily = MetaMarket & { date: string };
+
+export class MetaRateLimitError extends Error {}
+
+let metaPauseUntil = 0;
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function usagePercent(response: Response): number {
+  const raw = response.headers.get("x-business-use-case-usage");
+  if (!raw) return 0;
+  try {
+    const usage = JSON.parse(raw) as Record<string, Array<Record<string, number>>>;
+    return Math.max(0, ...Object.values(usage).flatMap((entries) => entries.flatMap((entry) => [entry.call_count ?? 0, entry.total_cputime ?? 0, entry.total_time ?? 0])));
+  } catch {
+    return 0;
+  }
+}
+
 export type MetaSummary = {
   source: "meta";
   from: string;
@@ -182,18 +206,79 @@ async function fetchAll<T>(path: string, params: URLSearchParams): Promise<T[]> 
 
   while (url) {
     if (++pages > 100) throw new Error("Meta pagination exceeded the safety limit");
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    const body = (await response.json()) as MetaPage<T>;
-    if (!response.ok || body.error) {
-      throw new Error(body.error?.message ?? `Meta API request failed (${response.status})`);
+    if (Date.now() < metaPauseUntil) await sleep(metaPauseUntil - Date.now());
+    let body: MetaPage<T> | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      body = (await response.json()) as MetaPage<T>;
+      const usage = usagePercent(response);
+      if (usage >= 100) throw new MetaRateLimitError("Meta usage limit reached; run stopped cleanly");
+      if (usage > 80) {
+        console.warn(`Meta API usage is ${usage}%; pausing before the next request`);
+        metaPauseUntil = Date.now() + 5_000;
+      }
+      if (body.error && [4, 17].includes(body.error.code ?? 0) && attempt < 4) {
+        await sleep(Math.min(5_000 * (2 ** attempt), 300_000));
+        continue;
+      }
+      if (!response.ok || body.error) throw new Error(body.error?.message ?? `Meta API request failed (${response.status})`);
+      break;
     }
+    if (!body) throw new Error("Meta API returned no response");
     rows.push(...(body.data ?? []));
     url = body.paging?.next ?? null;
   }
   return rows;
+}
+
+export async function getMetaCampaignDaily(from: string, to: string): Promise<MetaCampaignDaily[]> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const params = insightParams(from, to, "campaign");
+  params.set("time_increment", "1");
+  const [insights, definitions] = await Promise.all([
+    fetchAll<InsightRow>(`${accountId}/insights`, params),
+    fetchAll<MetaCampaignDefinition>(`${accountId}/campaigns`, new URLSearchParams({ fields: "id,name,objective", limit: "500" })),
+  ]);
+  const objectives = new Map(definitions.map((campaign) => [campaign.id, campaign.objective ?? null]));
+  return insights.map((row) => ({
+    ...normalizeRow(row),
+    campaignId: row.campaign_id ?? "unknown",
+    campaignName: row.campaign_name ?? "Unnamed campaign",
+    objective: objectives.get(row.campaign_id ?? "") ?? null,
+  }));
+}
+
+export async function getMetaMarketDaily(from: string, to: string, dimension: "comscore" | "state"): Promise<MetaMarketDaily[]> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const params = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }),
+    level: "account",
+    breakdowns: dimension === "comscore" ? "comscore_market" : "region",
+    fields: "spend,impressions,clicks,actions",
+    action_report_time: "conversion",
+    use_account_attribution_setting: "true",
+    time_increment: "1",
+    limit: "500",
+  });
+  const insightRows = await fetchAll<InsightRow>(`${accountId}/insights`, params);
+  const spendByDate = new Map<string, number>();
+  for (const row of insightRows) spendByDate.set(row.date_start, (spendByDate.get(row.date_start) ?? 0) + number(row.spend));
+  return insightRows.map((row) => {
+    const normalized = normalizeRow(row);
+    const total = spendByDate.get(row.date_start) ?? 0;
+    return {
+      date: row.date_start,
+      name: (dimension === "comscore" ? row.comscore_market : row.region) ?? `Unknown ${dimension}`,
+      spend: normalized.spend,
+      spendShare: total ? round((normalized.spend / total) * 100) : 0,
+      impressions: normalized.impressions,
+      clicks: normalized.clicks,
+      ctr: normalized.impressions ? round((normalized.clicks / normalized.impressions) * 100, 4) : 0,
+      cpm: normalized.impressions ? round((normalized.spend / normalized.impressions) * 1000) : 0,
+    };
+  });
 }
 
 function insightParams(from: string, to: string, level: "account" | "campaign") {
