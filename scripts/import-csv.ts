@@ -33,6 +33,8 @@ type ImportedOrder = {
   salesChannel: string;
   itemCount: number;
   customerHash: string | null;
+  customerName: string | null;
+  discountCodes: string[];
   cancelled: boolean;
   lineItems: ImportedLineItem[];
 };
@@ -141,6 +143,8 @@ function buildOrders(rows: CsvRow[]): ImportedOrder[] {
       salesChannel: normalizeShopifySalesChannel(source),
       itemCount: lineItems.reduce((sum, item) => sum + item.quantity, 0),
       customerHash: hashEmail(email),
+      customerName: textOrNull(firstValue(group, "Shipping Name") || firstValue(group, "Billing Name")),
+      discountCodes: Array.from(new Set(group.flatMap((row) => row["Discount Code"]?.split(",") ?? []).map((code) => code.trim()).filter(Boolean))),
       cancelled: Boolean(firstValue(group, "Cancelled at")),
       lineItems,
     };
@@ -150,14 +154,16 @@ function buildOrders(rows: CsvRow[]): ImportedOrder[] {
 async function upsertOrder(client: PoolClient, order: ImportedOrder): Promise<number> {
   await client.query(
     `insert into shopify_orders (
-       order_id, order_number, customer_hash, placed_at, financial_status,
+       order_id, order_number, customer_hash, customer_name, discount_codes, placed_at, financial_status,
        fulfillment_status, subtotal, discounts, total, currency,
        destination_city, destination_state, destination_country, sales_channel,
        item_count, synced_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+     ) values ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
      on conflict (order_id) do update set
        order_number = excluded.order_number,
        customer_hash = coalesce(shopify_orders.customer_hash, excluded.customer_hash),
+       customer_name = coalesce(shopify_orders.customer_name, excluded.customer_name),
+       discount_codes = case when jsonb_array_length(excluded.discount_codes) > 0 then excluded.discount_codes else shopify_orders.discount_codes end,
        placed_at = excluded.placed_at,
        financial_status = excluded.financial_status,
        fulfillment_status = excluded.fulfillment_status,
@@ -171,7 +177,7 @@ async function upsertOrder(client: PoolClient, order: ImportedOrder): Promise<nu
        sales_channel = coalesce(shopify_orders.sales_channel, excluded.sales_channel),
        item_count = excluded.item_count,
        synced_at = now()`,
-    [order.orderId, order.orderNumber, order.customerHash, order.placedAt,
+    [order.orderId, order.orderNumber, order.customerHash, order.customerName, JSON.stringify(order.discountCodes), order.placedAt,
       order.financialStatus, order.fulfillmentStatus, order.subtotal, order.discounts,
       order.total, order.currency, order.destinationCity, order.destinationState,
       order.destinationCountry, order.salesChannel, order.itemCount],

@@ -4,10 +4,10 @@ import type { PoolClient } from "pg";
 import { getDatabasePool } from "../lib/db";
 import { getGa4DailyBreakdowns, getGa4Summary } from "../lib/ga4";
 import { getKlaviyoHistoricalRange } from "../lib/klaviyo";
-import { getMetaCampaignDaily, getMetaMarketDaily, MetaRateLimitError } from "../lib/meta";
+import { getMetaCampaignDaily, getMetaCreatives, getMetaEntityDaily, getMetaMarketDaily, MetaRateLimitError } from "../lib/meta";
 import { getShopifySummary } from "../lib/shopify";
 
-type Source = "shopify" | "meta" | "ga4" | "klaviyo";
+export type Source = "shopify" | "meta" | "ga4" | "klaviyo";
 type RunStatus = "success" | "partial" | "failed";
 type SyncResult = { rows: number; status?: RunStatus; message: string };
 
@@ -96,14 +96,16 @@ async function syncShopify(from: string, to: string, dryRun: boolean): Promise<S
     for (const order of summary.orders) {
       await client.query(
         `insert into shopify_orders
-          (order_id, order_number, customer_id, customer_hash, placed_at, financial_status, fulfillment_status,
+          (order_id, order_number, customer_id, customer_hash, customer_name, discount_codes, placed_at, financial_status, fulfillment_status,
            subtotal, discounts, total, currency, destination_city, destination_state, destination_country,
-           sales_channel, item_count, landing_site, referring_site, utm_source, utm_medium, utm_campaign, synced_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now())
+           sales_channel, item_count, landing_site, referring_site, utm_source, utm_medium, utm_campaign, attribution, synced_at)
+         values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24::jsonb,now())
          on conflict (order_id) do update set
            order_number=excluded.order_number,
            customer_id=coalesce(excluded.customer_id,shopify_orders.customer_id),
            customer_hash=coalesce(excluded.customer_hash,shopify_orders.customer_hash),
+           customer_name=coalesce(excluded.customer_name,shopify_orders.customer_name),
+           discount_codes=excluded.discount_codes,
            placed_at=excluded.placed_at, financial_status=excluded.financial_status,
            fulfillment_status=excluded.fulfillment_status, subtotal=excluded.subtotal,
            discounts=excluded.discounts, total=excluded.total, currency=excluded.currency,
@@ -115,12 +117,14 @@ async function syncShopify(from: string, to: string, dryRun: boolean): Promise<S
            referring_site=coalesce(excluded.referring_site,shopify_orders.referring_site),
            utm_source=coalesce(excluded.utm_source,shopify_orders.utm_source),
            utm_medium=coalesce(excluded.utm_medium,shopify_orders.utm_medium),
-           utm_campaign=coalesce(excluded.utm_campaign,shopify_orders.utm_campaign), synced_at=now()`,
-        [numericId(order.id), order.name, order.customerId, hashEmail(order.customerEmail), order.createdAt,
+           utm_campaign=coalesce(excluded.utm_campaign,shopify_orders.utm_campaign),
+           attribution=coalesce(excluded.attribution,shopify_orders.attribution), synced_at=now()`,
+        [numericId(order.id), order.name, order.customerId, hashEmail(order.customerEmail), order.customer, JSON.stringify(order.discountCodes), order.createdAt,
           order.financialStatus.toLowerCase(), order.fulfillmentStatus.toLowerCase(), order.subtotal, order.discounts,
           order.total, summary.currency, order.city === "—" ? null : order.city, order.region === "—" ? null : order.region,
           order.country === "—" ? null : order.country, order.channel, order.itemQuantity, order.landingSite,
-          order.referringSite, order.utmSource, order.utmMedium, order.utmCampaign],
+          order.referringSite, order.utmSource, order.utmMedium, order.utmCampaign,
+          order.attribution ? JSON.stringify(order.attribution) : null],
       );
       await client.query("delete from shopify_order_line_items where order_id = $1", [numericId(order.id)]);
       for (const item of order.lineItems) await client.query(
@@ -137,11 +141,13 @@ async function syncShopify(from: string, to: string, dryRun: boolean): Promise<S
 }
 
 async function syncMeta(from: string, to: string, dryRun: boolean): Promise<SyncResult> {
-  const campaignRows = await getMetaCampaignDaily(from, to);
-  const stateRows = await getMetaMarketDaily(from, to, "state");
-  const comscoreRows = await getMetaMarketDaily(from, to, "comscore");
-  const message = `${campaignRows.length} campaign-days, ${stateRows.length} state-days, ${comscoreRows.length} market-days`;
-  if (dryRun) return { rows: campaignRows.length + stateRows.length + comscoreRows.length, message };
+  const [campaignRows, adsetRows, adRows, creatives, stateRows, comscoreRows] = await Promise.all([
+    getMetaCampaignDaily(from, to), getMetaEntityDaily(from, to, "adset"), getMetaEntityDaily(from, to, "ad"),
+    getMetaCreatives(), getMetaMarketDaily(from, to, "state"), getMetaMarketDaily(from, to, "comscore"),
+  ]);
+  const totalRows = campaignRows.length + adsetRows.length + adRows.length + creatives.length + stateRows.length + comscoreRows.length;
+  const message = `${campaignRows.length} campaign-days, ${adsetRows.length} ad-set days, ${adRows.length} ad-days, ${creatives.length} creatives, ${stateRows.length} state-days, ${comscoreRows.length} market-days`;
+  if (dryRun) return { rows: totalRows, message };
   const client = await getDatabasePool().connect();
   try {
     await client.query("begin");
@@ -155,13 +161,30 @@ async function syncMeta(from: string, to: string, dryRun: boolean): Promise<Sync
     );
     await client.query(
       `insert into channel_spend_daily
-        (date,platform,campaign_id,spend,impressions,link_clicks,platform_reported_purchases,platform_reported_purchase_value,synced_at)
-       select x.date::date,'meta',x.campaign_id,x.spend,x.impressions,x.link_clicks,x.purchases,x.purchase_value,now()
-       from jsonb_to_recordset($1::jsonb) as x(date text,campaign_id text,spend numeric,impressions bigint,link_clicks bigint,purchases integer,purchase_value numeric)
+        (date,platform,campaign_id,spend,impressions,reach,link_clicks,landing_page_views,add_to_cart,checkout_initiated,platform_reported_purchases,platform_reported_purchase_value,synced_at)
+       select x.date::date,'meta',x.campaign_id,x.spend,x.impressions,x.reach,x.link_clicks,x.landing_page_views,x.add_to_cart,x.checkout_initiated,x.purchases,x.purchase_value,now()
+       from jsonb_to_recordset($1::jsonb) as x(date text,campaign_id text,spend numeric,impressions bigint,reach bigint,link_clicks bigint,landing_page_views bigint,add_to_cart bigint,checkout_initiated bigint,purchases integer,purchase_value numeric)
        on conflict (date,platform,campaign_id) do update set spend=excluded.spend,impressions=excluded.impressions,
-       link_clicks=excluded.link_clicks,platform_reported_purchases=excluded.platform_reported_purchases,
+       reach=excluded.reach,link_clicks=excluded.link_clicks,landing_page_views=excluded.landing_page_views,
+       add_to_cart=excluded.add_to_cart,checkout_initiated=excluded.checkout_initiated,platform_reported_purchases=excluded.platform_reported_purchases,
        platform_reported_purchase_value=excluded.platform_reported_purchase_value,synced_at=now()`,
-      [JSON.stringify(campaignRows.map((row) => ({ date: row.date, campaign_id: row.campaignId, spend: row.spend, impressions: row.impressions, link_clicks: row.clicks, purchases: row.purchases, purchase_value: row.purchaseValue })))],
+      [JSON.stringify(campaignRows.map((row) => ({ date: row.date, campaign_id: row.campaignId, spend: row.spend, impressions: row.impressions, reach: row.reach, link_clicks: row.clicks, landing_page_views: row.landingPageViews, add_to_cart: row.addToCart, checkout_initiated: row.checkoutInitiated, purchases: row.purchases, purchase_value: row.purchaseValue })))],
+    );
+    await client.query(
+      `insert into meta_entity_daily
+       (date,level,entity_id,parent_id,campaign_id,name,campaign_name,objective,spend,impressions,reach,link_clicks,landing_page_views,add_to_cart,checkout_initiated,purchases,purchase_value,synced_at)
+       select x.date::date,x.level,x.entity_id,x.parent_id,x.campaign_id,x.name,x.campaign_name,x.objective,x.spend,x.impressions,x.reach,x.link_clicks,x.landing_page_views,x.add_to_cart,x.checkout_initiated,x.purchases,x.purchase_value,now()
+       from jsonb_to_recordset($1::jsonb) as x(date text,level text,entity_id text,parent_id text,campaign_id text,name text,campaign_name text,objective text,spend numeric,impressions bigint,reach bigint,link_clicks bigint,landing_page_views bigint,add_to_cart bigint,checkout_initiated bigint,purchases integer,purchase_value numeric)
+       on conflict (date,level,entity_id) do update set parent_id=excluded.parent_id,campaign_id=excluded.campaign_id,name=excluded.name,campaign_name=excluded.campaign_name,objective=excluded.objective,spend=excluded.spend,impressions=excluded.impressions,reach=excluded.reach,link_clicks=excluded.link_clicks,landing_page_views=excluded.landing_page_views,add_to_cart=excluded.add_to_cart,checkout_initiated=excluded.checkout_initiated,purchases=excluded.purchases,purchase_value=excluded.purchase_value,synced_at=now()`,
+      [JSON.stringify([...adsetRows, ...adRows].map((row) => ({ date: row.date, level: row.level, entity_id: row.entityId, parent_id: row.parentId, campaign_id: row.campaignId, name: row.name, campaign_name: row.campaignName, objective: row.objective, spend: row.spend, impressions: row.impressions, reach: row.reach, link_clicks: row.clicks, landing_page_views: row.landingPageViews, add_to_cart: row.addToCart, checkout_initiated: row.checkoutInitiated, purchases: row.purchases, purchase_value: row.purchaseValue })))],
+    );
+    await client.query(
+      `insert into meta_ad_creatives (ad_id,campaign_id,ad_name,creative_id,thumbnail_url,synced_at)
+       select x.ad_id,x.campaign_id,x.ad_name,x.creative_id,x.thumbnail_url,now()
+       from jsonb_to_recordset($1::jsonb) as x(ad_id text,campaign_id text,ad_name text,creative_id text,thumbnail_url text)
+       on conflict (ad_id) do update set campaign_id=excluded.campaign_id,ad_name=excluded.ad_name,
+       creative_id=excluded.creative_id,thumbnail_url=excluded.thumbnail_url,synced_at=now()`,
+      [JSON.stringify(creatives.map((row) => ({ ad_id: row.adId, campaign_id: row.campaignId, ad_name: row.adName, creative_id: row.creativeId, thumbnail_url: row.thumbnailUrl })))],
     );
     for (const [dimension, rows] of [["state", stateRows], ["comscore_market", comscoreRows]] as const) {
       await client.query(
@@ -175,7 +198,7 @@ async function syncMeta(from: string, to: string, dryRun: boolean): Promise<Sync
     }
     await client.query("commit");
   } catch (error) { await client.query("rollback"); throw error; } finally { client.release(); }
-  return { rows: campaignRows.length + stateRows.length + comscoreRows.length, message };
+  return { rows: totalRows, message };
 }
 
 async function syncGa4(from: string, to: string, dryRun: boolean): Promise<SyncResult> {
@@ -188,11 +211,11 @@ async function syncGa4(from: string, to: string, dryRun: boolean): Promise<SyncR
   try {
     await client.query("begin");
     await client.query(
-      `insert into ga4_channel_daily (date,channel,visitor_type,sessions,users,new_users,synced_at)
-       select x.date::date,x.channel,x.visitor_type,x.sessions,x.users,x.new_users,now()
-       from jsonb_to_recordset($1::jsonb) as x(date text,channel text,visitor_type text,sessions integer,users integer,new_users integer)
-       on conflict (date,channel,visitor_type) do update set sessions=excluded.sessions,users=excluded.users,new_users=excluded.new_users,synced_at=now()`,
-      [JSON.stringify(summary.dailyChannels.map((row) => ({ date: row.date, channel: row.channel, visitor_type: row.visitorType, sessions: row.sessions, users: row.users, new_users: row.newUsers })))],
+      `insert into ga4_channel_daily (date,channel,visitor_type,sessions,users,new_users,purchases,revenue,synced_at)
+       select x.date::date,x.channel,x.visitor_type,x.sessions,x.users,x.new_users,x.purchases,x.revenue,now()
+       from jsonb_to_recordset($1::jsonb) as x(date text,channel text,visitor_type text,sessions integer,users integer,new_users integer,purchases integer,revenue numeric)
+       on conflict (date,channel,visitor_type) do update set sessions=excluded.sessions,users=excluded.users,new_users=excluded.new_users,purchases=excluded.purchases,revenue=excluded.revenue,synced_at=now()`,
+      [JSON.stringify(summary.dailyChannels.map((row) => ({ date: row.date, channel: row.channel, visitor_type: row.visitorType, sessions: row.sessions, users: row.users, new_users: row.newUsers, purchases: row.purchases, revenue: row.revenue })))],
     );
     await client.query(
       `insert into ga4_funnel_daily (date,event,events,synced_at)
@@ -237,11 +260,11 @@ async function syncKlaviyo(from: string, to: string, dryRun: boolean): Promise<S
       [JSON.stringify(history.campaigns.map((row) => ({ date: row.date, message_id: row.id, campaign_id: row.parentId, name: row.name, channel: row.channel, recipients: row.recipients, delivered: row.delivered, open_rate: row.openRate, click_rate: row.clickRate, conversions: row.conversions, conversion_rate: row.conversionRate, revenue: row.revenue, revenue_per_recipient: row.revenuePerRecipient, unsubscribe_rate: row.unsubscribeRate, spam_complaint_rate: row.spamComplaintRate })))],
     );
     await client.query(
-      `insert into klaviyo_flow_daily (date,flow_message_id,flow_id,flow_name,channel,recipients,delivered,open_rate,click_rate,conversions,conversion_rate,revenue,revenue_per_recipient,unsubscribe_rate,spam_complaint_rate,synced_at)
-       select x.date::date,x.message_id,x.flow_id,x.flow_name,x.channel,x.recipients,x.delivered,x.open_rate,x.click_rate,x.conversions,x.conversion_rate,x.revenue,x.revenue_per_recipient,x.unsubscribe_rate,x.spam_complaint_rate,now()
-       from jsonb_to_recordset($1::jsonb) as x(date text,message_id text,flow_id text,flow_name text,channel text,recipients integer,delivered integer,open_rate numeric,click_rate numeric,conversions integer,conversion_rate numeric,revenue numeric,revenue_per_recipient numeric,unsubscribe_rate numeric,spam_complaint_rate numeric)
-       on conflict (date,flow_message_id) do update set flow_id=excluded.flow_id,flow_name=excluded.flow_name,channel=excluded.channel,recipients=excluded.recipients,delivered=excluded.delivered,open_rate=excluded.open_rate,click_rate=excluded.click_rate,conversions=excluded.conversions,conversion_rate=excluded.conversion_rate,revenue=excluded.revenue,revenue_per_recipient=excluded.revenue_per_recipient,unsubscribe_rate=excluded.unsubscribe_rate,spam_complaint_rate=excluded.spam_complaint_rate,synced_at=now()`,
-      [JSON.stringify(history.flowMessages.map((row) => ({ date: row.date, message_id: row.id, flow_id: row.parentId, flow_name: row.parentName ?? row.name, channel: row.channel, recipients: row.recipients, delivered: row.delivered, open_rate: row.openRate, click_rate: row.clickRate, conversions: row.conversions, conversion_rate: row.conversionRate, revenue: row.revenue, revenue_per_recipient: row.revenuePerRecipient, unsubscribe_rate: row.unsubscribeRate, spam_complaint_rate: row.spamComplaintRate })))],
+      `insert into klaviyo_flow_daily (date,flow_message_id,flow_id,flow_name,message_name,channel,recipients,delivered,open_rate,click_rate,conversions,conversion_rate,revenue,revenue_per_recipient,unsubscribe_rate,spam_complaint_rate,synced_at)
+       select x.date::date,x.message_id,x.flow_id,x.flow_name,x.message_name,x.channel,x.recipients,x.delivered,x.open_rate,x.click_rate,x.conversions,x.conversion_rate,x.revenue,x.revenue_per_recipient,x.unsubscribe_rate,x.spam_complaint_rate,now()
+       from jsonb_to_recordset($1::jsonb) as x(date text,message_id text,flow_id text,flow_name text,message_name text,channel text,recipients integer,delivered integer,open_rate numeric,click_rate numeric,conversions integer,conversion_rate numeric,revenue numeric,revenue_per_recipient numeric,unsubscribe_rate numeric,spam_complaint_rate numeric)
+       on conflict (date,flow_message_id) do update set flow_id=excluded.flow_id,flow_name=excluded.flow_name,message_name=excluded.message_name,channel=excluded.channel,recipients=excluded.recipients,delivered=excluded.delivered,open_rate=excluded.open_rate,click_rate=excluded.click_rate,conversions=excluded.conversions,conversion_rate=excluded.conversion_rate,revenue=excluded.revenue,revenue_per_recipient=excluded.revenue_per_recipient,unsubscribe_rate=excluded.unsubscribe_rate,spam_complaint_rate=excluded.spam_complaint_rate,synced_at=now()`,
+      [JSON.stringify(history.flowMessages.map((row) => ({ date: row.date, message_id: row.id, flow_id: row.parentId, flow_name: row.parentName ?? row.name, message_name: row.name, channel: row.channel, recipients: row.recipients, delivered: row.delivered, open_rate: row.openRate, click_rate: row.clickRate, conversions: row.conversions, conversion_rate: row.conversionRate, revenue: row.revenue, revenue_per_recipient: row.revenuePerRecipient, unsubscribe_rate: row.unsubscribeRate, spam_complaint_rate: row.spamComplaintRate })))],
     );
     await client.query(
       `insert into klaviyo_list_health_daily (date,current_email_list_size,subscribed,unsubscribed,net_growth,synced_at)
@@ -260,6 +283,28 @@ async function logRun(source: Source, from: string, to: string, status: RunStatu
     "insert into sync_runs (source,range_from,range_to,status,rows_upserted,error) values ($1,$2,$3,$4,$5,$6)",
     [source, from, to, status, rows, error ?? null],
   );
+}
+
+export type SourceSyncOutcome = { source: Source; from: string; to: string; status: RunStatus; rows: number; message: string };
+
+export async function syncLatestSources(sources: Source[] = SOURCES): Promise<SourceSyncOutcome[]> {
+  return Promise.all(sources.map(async (source) => {
+    const { from, to } = await rangeFor(source, undefined, undefined, true);
+    try {
+      const result = source === "shopify" ? await syncShopify(from, to, false)
+        : source === "meta" ? await syncMeta(from, to, false)
+          : source === "ga4" ? await syncGa4(from, to, false)
+            : await syncKlaviyo(from, to, false);
+      const status = result.status ?? "success";
+      await logRun(source, from, to, status, result.rows);
+      return { source, from, to, status, rows: result.rows, message: result.message };
+    } catch (error) {
+      const message = redact(error);
+      const status = error instanceof MetaRateLimitError ? "partial" : "failed";
+      await logRun(source, from, to, status, 0, message);
+      return { source, from, to, status, rows: 0, message };
+    }
+  }));
 }
 
 async function main() {
@@ -288,4 +333,6 @@ async function main() {
   if (failed) process.exitCode = 1;
 }
 
-main().catch((error) => { console.error(redact(error)); process.exitCode = 1; });
+if (process.argv[1]?.endsWith("sync.ts")) {
+  main().catch((error) => { console.error(redact(error)); process.exitCode = 1; });
+}

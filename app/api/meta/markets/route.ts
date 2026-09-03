@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMetaMarketSummary } from "@/lib/meta";
+import { getMetaMarketsFromDb } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     if (dimensionParam !== "comscore" && dimensionParam !== "state") {
       return NextResponse.json({ error: "Dimension must be comscore or state" }, { status: 400 });
     }
-    return NextResponse.json(await getMetaMarketSummary(from, to, dimensionParam), {
+    return NextResponse.json(await getMetaMarketsFromDb(from, to, dimensionParam), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

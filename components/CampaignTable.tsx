@@ -194,7 +194,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
         <table className="w-full min-w-[940px] border-collapse text-[13px]">
           <thead className="sticky top-0 z-10 bg-surface"><tr>{[
             { label: "Campaign / ad set / ad", key: "name" as const }, { label: "Spend", key: "spend" as const },
-            { label: "Frequency", key: "frequency" as const },
+            { label: "Avg daily frequency", key: "frequency" as const },
             { label: "CTR", key: "ctr" as const }, { label: "CPC", key: "cpc" as const },
             { label: "CPM", key: "cpm" as const },
             { label: "Purchases", key: "purchases" as const }, { label: "ROAS", key: "roas" as const }, { label: "CPA", key: "cpa" as const },

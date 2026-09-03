@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMetaCampaignDetail } from "@/lib/meta";
+import { getMetaCampaignDetailFromDb } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     }
     const fromDate = new Date(`${to}T12:00:00Z`);
     fromDate.setUTCDate(fromDate.getUTCDate() - 29);
-    const data = await getMetaCampaignDetail(campaignId, fromDate.toISOString().slice(0, 10), to);
+    const data = await getMetaCampaignDetailFromDb(campaignId, fromDate.toISOString().slice(0, 10), to);
     return NextResponse.json(data, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown Meta error";

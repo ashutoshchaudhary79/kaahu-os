@@ -77,9 +77,32 @@ export function Dashboard() {
   const [ga4Error, setGa4Error] = useState<string | null>(null);
   const [klaviyoError, setKlaviyoError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [syncing, setSyncing] = useState(true);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [activeReport, setActiveReport] = useState<"campaigns" | "geography" | "acquisition" | "retention">("campaigns");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/sync", { method: "POST", cache: "no-store" })
+      .then(async (response) => {
+        const body = (await response.json()) as { ok?: boolean; detail?: string };
+        if (!response.ok) throw new Error(body.detail ?? "Latest data could not be synced");
+        if (active && !body.ok) setSyncWarning("Some sources could not be refreshed; showing the latest stored data.");
+      })
+      .catch(() => {
+        if (active) setSyncWarning("Latest data could not be refreshed; showing the latest stored data.");
+      })
+      .finally(() => {
+        if (active) {
+          setSyncing(false);
+          setRefreshVersion((version) => version + 1);
+        }
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -98,30 +121,23 @@ export function Dashboard() {
         return body;
       };
 
-      await Promise.all([
-        read<ShopifyData>(`/api/shopify?${query}`).then(setShopify).catch((requestError: unknown) => {
-          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
-            setShopifyError(requestError instanceof Error ? requestError.message : "Shopify data could not be loaded");
-          }
-        }),
-        read<MetaData>(`/api/meta?${query}`).then(setMeta).catch((requestError: unknown) => {
-          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
-            setMetaError(requestError instanceof Error ? requestError.message : "Meta data could not be loaded");
-          }
-        }),
-        read<Ga4Data>(`/api/ga4?${query}`).then(setGa4).catch((requestError: unknown) => {
-          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
-            setGa4Error(requestError instanceof Error ? requestError.message : "GA4 data could not be loaded");
-          }
-        }),
-        read<KlaviyoData>(`/api/klaviyo?${query}`).then(setKlaviyo).catch((requestError: unknown) => {
-          if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
-            setKlaviyoError(requestError instanceof Error ? requestError.message : "Klaviyo data could not be loaded");
-          }
-        }),
+      const results = await Promise.allSettled([
+        read<ShopifyData>(`/api/shopify?${query}`), read<MetaData>(`/api/meta?${query}`),
+        read<Ga4Data>(`/api/ga4?${query}`), read<KlaviyoData>(`/api/klaviyo?${query}`),
       ]);
-
-      if (!controller.signal.aborted) setLoading(false);
+      if (controller.signal.aborted) return;
+      const message = (result: PromiseSettledResult<unknown>, fallback: string) => result.status === "rejected"
+        ? result.reason instanceof Error ? result.reason.message : fallback : null;
+      const [shopifyResult, metaResult, ga4Result, klaviyoResult] = results;
+      setShopify(shopifyResult.status === "fulfilled" ? shopifyResult.value : null);
+      setMeta(metaResult.status === "fulfilled" ? metaResult.value : null);
+      setGa4(ga4Result.status === "fulfilled" ? ga4Result.value : null);
+      setKlaviyo(klaviyoResult.status === "fulfilled" ? klaviyoResult.value : null);
+      setShopifyError(message(shopifyResult, "Shopify data could not be loaded"));
+      setMetaError(message(metaResult, "Meta data could not be loaded"));
+      setGa4Error(message(ga4Result, "GA4 data could not be loaded"));
+      setKlaviyoError(message(klaviyoResult, "Klaviyo data could not be loaded"));
+      setLoading(false);
     };
     load().catch(() => {
       if (!controller.signal.aborted) {
@@ -130,7 +146,7 @@ export function Dashboard() {
     });
 
     return () => controller.abort();
-  }, [range]);
+  }, [range, refreshVersion]);
 
   const blendedRoas = shopify && meta?.spend ? shopify.revenue / meta.spend : null;
   const blendedCac = shopify?.orderCount && meta ? meta.spend / shopify.orderCount : null;
@@ -255,7 +271,7 @@ export function Dashboard() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Kaahu</p>
           <h1 className="font-display mt-2 text-[2rem] font-medium leading-tight tracking-[-0.03em] sm:text-[2.45rem]">Performance dashboard</h1>
-          <p className="mt-1.5 text-[13px] text-ink-soft">Shopify, Meta Ads, GA4, and Klaviyo · combined view</p>
+          <p className="mt-1.5 text-[13px] text-ink-soft">Shopify, Meta Ads, GA4, and Klaviyo · combined view{syncing ? " · refreshing latest data…" : ""}</p>
           <details className="mt-3 sm:hidden">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-ink-soft">{loading ? "Connecting sources…" : `${connectedCount} of 4 sources connected`}</summary>
             <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} />{source.name} {source.error ? "unavailable" : source.data ? "connected" : "connecting"}</span>)}</div>
@@ -270,6 +286,8 @@ export function Dashboard() {
         </div>
         <DateRangePicker value={range} onChange={setRange} />
       </header>
+
+      {syncWarning && <div role="status" className="mt-6 rounded-lg border border-amber/30 bg-surface px-4 py-3 text-sm text-ink-soft">{syncWarning}</div>}
 
       {(shopifyError || metaError || ga4Error || klaviyoError) && (
         <div role={primaryInvalid ? "alert" : "status"} className={`mt-6 rounded-lg border px-4 py-3 text-sm ${primaryInvalid ? "border-brick/30 bg-brick/5 text-brick" : "border-amber/30 bg-surface text-ink"}`}>
@@ -306,7 +324,7 @@ export function Dashboard() {
       </section>
 
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
-        Shopify, Meta, GA4, and Klaviyo figures are live when connected. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.
+        Figures are refreshed into Supabase when the dashboard opens, then every report is read from Supabase. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.
       </footer>
       <KpiDetailPanel detail={activeKpi ? kpiDetails[activeKpi] ?? null : null} onClose={() => setActiveKpi(null)} from={range.from} to={range.to} timezone={shopify?.timezone ?? "Account timezones"} />
       {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={shopify.timezone} from={range.from} to={range.to} attributionLookup={attributionLookup} />}

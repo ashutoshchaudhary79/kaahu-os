@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getShopifySummary } from "@/lib/shopify";
+import { getShopifySummaryFromDb } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,7 @@ function parseRange(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { from, to } = parseRange(request);
-    const data = await getShopifySummary(from, to);
+    const data = await getShopifySummaryFromDb(from, to);
     return NextResponse.json(data, {
       headers: { "Cache-Control": "private, no-store" },
     });

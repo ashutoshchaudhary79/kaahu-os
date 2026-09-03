@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMetaSummary } from "@/lib/meta";
+import { getMetaSummaryFromDb } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ function range(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { from, to } = range(request);
-    return NextResponse.json(await getMetaSummary(from, to), {
+    return NextResponse.json(await getMetaSummaryFromDb(from, to), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

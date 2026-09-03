@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMetaBreakdown } from "@/lib/meta";
+import { getMetaBreakdownFromDb } from "@/lib/dashboard-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     if (!/^\d+$/.test(parentId)) {
       return NextResponse.json({ error: "A valid parentId is required" }, { status: 400 });
     }
-    const rows = await getMetaBreakdown(from, to, level, parentId);
+    const rows = await getMetaBreakdownFromDb(from, to, level, parentId);
     return NextResponse.json({ level, parentId, rows }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown Meta error";

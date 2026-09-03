@@ -28,7 +28,7 @@ type MetaPage<T> = {
 };
 
 type MetaCampaignDefinition = { id: string; name: string; objective?: string };
-type MetaAdCreative = { id: string; name?: string; creative?: { id: string; name?: string; thumbnail_url?: string; image_url?: string } | null };
+type MetaAdCreative = { id: string; name?: string; campaign?: { id: string } | null; creative?: { id: string; name?: string; thumbnail_url?: string; image_url?: string } | null };
 export type FunnelRole = "tofu" | "mofu" | "sales";
 
 export type MetaDaily = {
@@ -102,7 +102,21 @@ export type MetaCampaignDaily = MetaDaily & {
   campaignId: string;
   campaignName: string;
   objective: string | null;
+  reach: number;
 };
+
+export type MetaEntityDaily = MetaDaily & {
+  level: "adset" | "ad";
+  entityId: string;
+  parentId: string;
+  campaignId: string | null;
+  name: string;
+  campaignName: string | null;
+  objective: string | null;
+  reach: number;
+};
+
+export type MetaCreative = { adId: string; campaignId: string | null; adName: string; creativeId: string | null; thumbnailUrl: string | null };
 
 export type MetaMarketDaily = MetaMarket & { date: string };
 
@@ -246,6 +260,48 @@ export async function getMetaCampaignDaily(from: string, to: string): Promise<Me
     campaignId: row.campaign_id ?? "unknown",
     campaignName: row.campaign_name ?? "Unnamed campaign",
     objective: objectives.get(row.campaign_id ?? "") ?? null,
+    reach: number(row.reach),
+  }));
+}
+
+export async function getMetaEntityDaily(from: string, to: string, level: "adset" | "ad"): Promise<MetaEntityDaily[]> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const fields = level === "adset"
+    ? "campaign_id,campaign_name,adset_id,adset_name,spend,impressions,reach,clicks,actions,action_values"
+    : "campaign_id,campaign_name,adset_id,ad_id,ad_name,spend,impressions,reach,clicks,actions,action_values";
+  const params = new URLSearchParams({
+    time_range: JSON.stringify({ since: from, until: to }), level, fields,
+    action_report_time: "conversion", use_account_attribution_setting: "true", time_increment: "1", limit: "500",
+  });
+  const [insights, definitions] = await Promise.all([
+    fetchAll<InsightRow>(`${accountId}/insights`, params),
+    fetchAll<MetaCampaignDefinition>(`${accountId}/campaigns`, new URLSearchParams({ fields: "id,name,objective", limit: "500" })),
+  ]);
+  const objectives = new Map(definitions.map((campaign) => [campaign.id, campaign.objective ?? null]));
+  return insights.map((row) => {
+    const normalized = normalizeRow(row);
+    const entityId = level === "adset" ? row.adset_id : row.ad_id;
+    const name = level === "adset" ? row.adset_name : row.ad_name;
+    const parentId = level === "adset" ? row.campaign_id : row.adset_id;
+    return {
+      ...normalized, level, entityId: entityId ?? name ?? "unknown", parentId: parentId ?? "unknown",
+      campaignId: row.campaign_id ?? null, name: name ?? `Unnamed ${level}`,
+      campaignName: row.campaign_name ?? null, objective: objectives.get(row.campaign_id ?? "") ?? null,
+      reach: number(row.reach),
+    };
+  });
+}
+
+export async function getMetaCreatives(): Promise<MetaCreative[]> {
+  const accountIdValue = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = accountIdValue.startsWith("act_") ? accountIdValue : `act_${accountIdValue}`;
+  const rows = await fetchAll<MetaAdCreative>(`${accountId}/ads`, new URLSearchParams({
+    fields: "id,name,campaign{id},creative{id,name,thumbnail_url,image_url}", limit: "500",
+  }));
+  return rows.map((ad) => ({
+    adId: ad.id, campaignId: ad.campaign?.id ?? null, adName: ad.name ?? "Unnamed ad",
+    creativeId: ad.creative?.id ?? null, thumbnailUrl: ad.creative?.thumbnail_url ?? ad.creative?.image_url ?? null,
   }));
 }
 

@@ -101,7 +101,24 @@ export function OrderDetailsDrawer({ open, onClose, orders, currency, timezone, 
         <button type="button" onClick={onClose} className="rounded border border-rule bg-white px-3 py-1.5 text-sm text-ink-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">Close</button>
       </header>
       <div className="flex-1 overflow-auto p-5 sm:p-7">
-        <div className="overflow-auto rounded border border-rule bg-white">
+        <div className="grid gap-3 md:hidden">
+          {sorted.map((order) => <article key={order.id} className="rounded border border-rule bg-white p-4">
+            <button type="button" onClick={() => toggleExpanded(order.id)} aria-expanded={expanded.has(order.id)} className="flex min-h-11 w-full items-start justify-between gap-3 text-left">
+              <span><strong className="text-sm">{order.name}</strong><span className="mt-1 block text-xs text-ink-soft">{order.customer}</span></span>
+              <span className="text-right"><strong className="block text-sm tabular-nums">{money(order.total, currency)}</strong><span className="mt-1 block text-[10px] text-accent">{expanded.has(order.id) ? "Hide details" : "View details"}</span></span>
+            </button>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-rule pt-3 text-xs">
+              <div><dt className="text-ink-faint">Placed</dt><dd className="mt-1">{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: timezone }).format(new Date(order.createdAt))}</dd></div>
+              <div><dt className="text-ink-faint">Status</dt><dd className="mt-1">{titleCase(order.financialStatus)} · {titleCase(order.fulfillmentStatus)}</dd></div>
+              <div className="col-span-2"><dt className="text-ink-faint">Products</dt><dd className="mt-1 leading-5">{order.products}</dd></div>
+              <div><dt className="text-ink-faint">Discount code</dt><dd className="mt-1 break-words">{order.discountCode}</dd></div>
+              <div><dt className="text-ink-faint">Destination</dt><dd className="mt-1">{[order.city, order.region, order.country].filter((value) => value !== "—").join(", ") || "—"}</dd></div>
+              <div className="col-span-2"><dt className="text-ink-faint">Captured attribution</dt><dd className="mt-1 break-all text-accent">{order.attributionSource}</dd></div>
+            </dl>
+            {expanded.has(order.id) && <div className="mt-4 border-t border-rule pt-4"><p className="mb-3 text-[11px] text-ink-faint">{order.attribution?.daysToConversion === null || order.attribution?.daysToConversion === undefined ? "Conversion window unavailable" : `${order.attribution.daysToConversion} day${order.attribution.daysToConversion === 1 ? "" : "s"} to conversion`}</p><div className="grid gap-3 [&_dd]:min-w-0 [&_dd]:break-all">{visitCard("First touch", order.attribution?.firstVisit ?? null)}{visitCard("Last touch", order.attribution?.lastVisit ?? null)}</div></div>}
+          </article>)}
+        </div>
+        <div className="hidden overflow-auto rounded border border-rule bg-white md:block">
           <table className="w-full min-w-[1940px] border-collapse text-[13px]">
             <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_#e4e1d8]"><tr>{headers.map((header) => <th key={header.key} className={`px-3 py-3 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${["itemQuantity", "subtotal", "discounts", "total"].includes(header.key) ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className="inline-flex items-center gap-1 hover:text-ink">{header.label}<span className={sort.key === header.key ? "text-accent" : "text-rule"}>{sort.key === header.key ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</span></button></th>)}</tr></thead>
             <tbody>{sorted.map((order) => <Fragment key={order.id}><tr className="hover:bg-paper/70">

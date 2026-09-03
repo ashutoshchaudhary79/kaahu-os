@@ -20,7 +20,7 @@ export type Ga4Summary = {
   from: string;
   to: string;
   totals: { sessions: number; users: number; newUsers: number; returningUsers: number; purchases: number; revenue: number; conversionRate: number };
-  dailyChannels: Array<{ date: string; channel: string; visitorType: string; sessions: number; users: number; newUsers: number }>;
+  dailyChannels: Array<{ date: string; channel: string; visitorType: string; sessions: number; users: number; newUsers: number; purchases: number; revenue: number }>;
   funnel: Array<{ event: string; events: number; stepRate: number | null; sessionRate: number }>;
   channels: Array<{ channel: string; sessions: number; users: number; purchases: number; conversionRate: number; revenue: number }>;
   devices: Array<{ device: string; sessions: number; users: number; purchases: number; conversionRate: number; revenue: number }>;
@@ -141,7 +141,7 @@ export async function getGa4Summary(from: string, to: string): Promise<Ga4Summar
   const [totalRows, audienceRows, dailyRows, funnelRows, channelRows, deviceRows, landingRows, landingEventRows] = await Promise.all([
     runReport(token, { dateRanges, dimensions: [], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "newUsers" }, { name: "transactions" }, { name: "purchaseRevenue" }] }),
     runReport(token, { dateRanges, dimensions: [{ name: "newVsReturning" }], metrics: [{ name: "totalUsers" }] }),
-    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "sessionDefaultChannelGroup" }, { name: "newVsReturning" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "newUsers" }], limit: "100000", orderBys: [{ dimension: { dimensionName: "date" } }] }),
+    runReport(token, { dateRanges, dimensions: [{ name: "date" }, { name: "sessionDefaultChannelGroup" }, { name: "newVsReturning" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "newUsers" }, { name: "transactions" }, { name: "purchaseRevenue" }], limit: "100000", orderBys: [{ dimension: { dimensionName: "date" } }] }),
     runReport(token, { dateRanges, dimensions: [{ name: "eventName" }], metrics: [{ name: "eventCount" }], dimensionFilter: eventFilter }),
     runReport(token, { dateRanges, dimensions: [{ name: "sessionDefaultChannelGroup" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "transactions" }, { name: "purchaseRevenue" }], limit: "10000" }),
     runReport(token, { dateRanges, dimensions: [{ name: "deviceCategory" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "transactions" }, { name: "purchaseRevenue" }], limit: "10000" }),
@@ -151,7 +151,7 @@ export async function getGa4Summary(from: string, to: string): Promise<Ga4Summar
 
   const dailyChannels = dailyRows.map((row) => ({
     date: ga4Date(textAt(row, 0)), channel: textAt(row, 1), visitorType: textAt(row, 2),
-    sessions: numberAt(row, 0), users: numberAt(row, 1), newUsers: numberAt(row, 2),
+    sessions: numberAt(row, 0), users: numberAt(row, 1), newUsers: numberAt(row, 2), purchases: numberAt(row, 3), revenue: numberAt(row, 4),
   }));
   const channelMap = new Map(channelRows.map((row) => [textAt(row, 0), row]));
   const channels = CHANNELS.map((channel) => {

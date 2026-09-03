@@ -214,8 +214,10 @@ export async function getKlaviyoHistoricalRange(from: string, to: string): Promi
   for (let chunkFrom = from; chunkFrom <= to; chunkFrom = shiftDay(chunkFrom, 60)) {
     const candidateTo = shiftDay(chunkFrom, 59);
     const chunkTo = candidateTo < to ? candidateTo : to;
-    // Reporting endpoints allow only two steady requests per minute.
-    await new Promise((resolve) => setTimeout(resolve, 30_500));
+    // Reporting endpoints allow only two steady requests per minute. The campaign
+    // report and first flow report consume that initial allowance; pause between
+    // additional flow windows.
+    if (seriesResponses.length) await new Promise((resolve) => setTimeout(resolve, 30_500));
     seriesResponses.push(await request<SeriesResponse>("/flow-series-reports/", {
       method: "POST",
       body: JSON.stringify({ data: { type: "flow-series-report", attributes: {

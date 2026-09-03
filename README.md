@@ -50,6 +50,8 @@ npm run sync -- --source=all --since-last
 
 Valid sources are `shopify`, `meta`, `ga4`, `klaviyo`, and `all`. Each source is isolated and logged independently so one failure does not prevent the others from running. Shopify is generally limited to the latest 60 days until `read_all_orders` is granted. Klaviyo campaign reports are fetched for the requested range, while flow-series reports are split into API-compatible windows and throttled automatically. All source credentials and the database connection remain server-side.
 
+When the dashboard opens it immediately renders the latest Supabase snapshot while an overlap-safe incremental sync runs for all four sources in parallel. When that refresh finishes, the dashboard silently re-queries Supabase. Every dashboard report—including geographic and campaign drilldowns—is queried from Supabase rather than calling a vendor API. Concurrent startup requests share one in-process sync so development remounts do not duplicate vendor traffic.
+
 ## Meta API
 
 `GET /api/meta` returns daily spend, a deduplicated paid funnel, purchase value, and campaign metrics for the selected range. It uses the ad account attribution settings and requires `META_ACCESS_TOKEN` with `ads_read` access.
