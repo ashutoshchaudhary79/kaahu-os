@@ -7,6 +7,23 @@ import type { ShopifySummary } from "@/lib/shopify";
 const n = (value: unknown) => Number(value ?? 0);
 const round = (value: number, places = 2) => Math.round((value + Number.EPSILON) * 10 ** places) / 10 ** places;
 
+export type SourceRefreshStatus = {
+  source: "shopify" | "meta" | "ga4" | "klaviyo";
+  lastRefreshedAt: string | null;
+};
+
+export async function getSourceRefreshStatuses(): Promise<SourceRefreshStatus[]> {
+  const result = await queryDatabase<{ source: SourceRefreshStatus["source"]; last_refreshed_at: Date | string | null }>(
+    `select sources.source,
+       (select run_at from sync_runs where sync_runs.source = sources.source and status = 'success' order by run_at desc limit 1) last_refreshed_at
+     from (values ('shopify'),('meta'),('ga4'),('klaviyo')) sources(source)`,
+  );
+  return result.rows.map((row) => ({
+    source: row.source,
+    lastRefreshedAt: row.last_refreshed_at ? new Date(row.last_refreshed_at).toISOString() : null,
+  }));
+}
+
 function role(objective: string | null, name: string): FunnelRole {
   const value = objective?.toUpperCase() ?? "";
   if (["OUTCOME_AWARENESS", "BRAND_AWARENESS", "REACH", "VIDEO_VIEWS"].includes(value) || /awareness|tofu|reach|video/i.test(name)) return "tofu";
@@ -44,6 +61,19 @@ export async function getShopifySummaryFromDb(from: string, to: string): Promise
       const discountCodes = Array.isArray(r.discount_codes) ? r.discount_codes.map(String) : [];
       return { id: String(r.order_id), name: String(r.order_number), createdAt: new Date(String(r.placed_at)).toISOString(), itemQuantity: n(r.item_count), subtotal: n(r.subtotal), discounts: n(r.discounts), total: n(r.total), financialStatus: String(r.financial_status ?? "unknown"), fulfillmentStatus: String(r.fulfillment_status ?? "unknown"), channel: String(r.sales_channel ?? "Unknown source"), customer: String(r.customer_name ?? "Guest / unavailable"), discountCodes, discountCode: discountCodes.join(", ") || "—", attributionSource: String(r.utm_source ?? r.referring_site ?? "Direct / unavailable"), attribution: storedAttribution ?? fallbackAttribution, customerId: r.customer_id ? String(r.customer_id) : null, customerEmail: null, utmSource: r.utm_source as string | null, utmMedium: r.utm_medium as string | null, utmCampaign: r.utm_campaign as string | null, referringSite: r.referring_site as string | null, landingSite: r.landing_site as string | null, lineItems: r.line_items as ShopifySummary["orders"][number]["lineItems"], products: (r.line_items as Array<{productTitle:string;variantTitle:string|null;quantity:number}>).map((x) => `${x.quantity}× ${x.productTitle}${x.variantTitle ? ` · ${x.variantTitle}` : ""}`).join(", "), city: String(r.destination_city ?? "—"), region: String(r.destination_state ?? "—"), country: String(r.destination_country ?? "—") };
     }),
+  };
+}
+
+export async function getChartDailyFromDb(from: string, to: string) {
+  const [shopifyRows, metaRows] = await Promise.all([
+    queryDatabase(`select (placed_at at time zone 'America/Los_Angeles')::date::text date,round(sum(total),2) revenue from shopify_orders where (placed_at at time zone 'America/Los_Angeles')::date between $1 and $2 group by 1 order by 1`, [from, to]),
+    queryDatabase(`select date::text date,sum(spend) spend from channel_spend_daily where platform='meta' and date between $1 and $2 group by date order by date`, [from, to]),
+  ]);
+  return {
+    from,
+    to,
+    revenueDaily: shopifyRows.rows.map((row) => ({ date: String(row.date), revenue: n(row.revenue) })),
+    spendDaily: metaRows.rows.map((row) => ({ date: String(row.date), spend: n(row.spend) })),
   };
 }
 

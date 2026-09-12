@@ -29,6 +29,13 @@ button, [role="button"], select, input { -webkit-tap-highlight-color: transparen
   font-family: Georgia, "Times New Roman", serif;
 }
 
+.acronym-tooltip {
+  cursor: help;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
 ::selection {
   background: #efe9de;
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DateRange } from "./DateRangePicker";
+import { AcronymText } from "./AcronymText";
 
 type Dimension = "state" | "comscore";
 type SortKey = "name" | "spend" | "spendShare" | "impressions" | "clicks" | "ctr" | "cpm";
@@ -96,13 +97,13 @@ export function MarketSpendPanel({ range }: { range: DateRange }) {
           <dl className="mt-3 grid grid-cols-4 gap-2 text-[11px]">
             <div className="col-span-2"><dt className="text-ink-faint">Impressions</dt><dd className="mt-1 font-medium tabular-nums">{market.impressions.toLocaleString("en-US")}</dd></div>
             <div className="col-span-2"><dt className="text-ink-faint">Link clicks</dt><dd className="mt-1 font-medium tabular-nums">{market.clicks.toLocaleString("en-US")}</dd></div>
-            <div className="col-span-2"><dt className="text-ink-faint">CTR</dt><dd className="mt-1 font-medium tabular-nums">{market.ctr.toFixed(2)}%</dd></div>
-            <div className="col-span-2"><dt className="text-ink-faint">CPM</dt><dd className="mt-1 font-medium tabular-nums">{money(market.cpm)}</dd></div>
+            <div className="col-span-2"><dt className="text-ink-faint"><AcronymText>CTR</AcronymText></dt><dd className="mt-1 font-medium tabular-nums">{market.ctr.toFixed(2)}%</dd></div>
+            <div className="col-span-2"><dt className="text-ink-faint"><AcronymText>CPM</AcronymText></dt><dd className="mt-1 font-medium tabular-nums">{money(market.cpm)}</dd></div>
           </dl>
         </article>)}</div>
         <div className={`hidden overflow-x-auto md:block ${showAll ? "max-h-[560px] overflow-y-auto rounded border border-rule" : ""}`}>
           <table className="w-full min-w-[780px] border-collapse text-[13px]">
-            <thead className={showAll ? "sticky top-0 z-10 bg-white shadow-[0_1px_0_#e4e1d8]" : ""}><tr>{headers.map((header, index) => <th key={header.key} className={`border-b border-rule px-3 pb-2.5 pt-2 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}>{header.label}<span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
+            <thead className={showAll ? "sticky top-0 z-10 bg-white shadow-[0_1px_0_#e4e1d8]" : ""}><tr>{headers.map((header, index) => <th key={header.key} className={`border-b border-rule px-3 pb-2.5 pt-2 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}><AcronymText>{header.label}</AcronymText><span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
             <tbody>{visible.map((market) => <tr key={market.name} className="last:[&_td]:border-b-0 hover:bg-paper/70">
               <td className="w-[32%] border-b border-rule px-3 py-3"><div className="font-medium">{market.name}</div><div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-accent-soft"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max((market.spend / maxSpend) * 100, 1)}%` }} /></div></td>
               <td className="border-b border-rule px-3 py-3 text-right font-medium tabular-nums">{money(market.spend)}</td>

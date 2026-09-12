@@ -29,9 +29,6 @@ function parseRange(request: NextRequest) {
   if (!Number.isFinite(fromTime) || !Number.isFinite(toTime) || fromTime > toTime) {
     throw new Error("The date range is invalid");
   }
-  if ((toTime - fromTime) / 86_400_000 > 366) {
-    throw new Error("Date ranges cannot exceed 366 days");
-  }
   return { from, to };
 }
 
@@ -44,7 +41,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Shopify error";
-    const badRequest = message.includes("date") || message.includes("Dates") || message.includes("366");
+    const badRequest = message.includes("date") || message.includes("Dates");
     console.error("Shopify dashboard request failed:", message);
     return NextResponse.json(
       { error: "Unable to load Shopify data", detail: message },

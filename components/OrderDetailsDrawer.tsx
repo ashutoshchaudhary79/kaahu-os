@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { AcronymText } from "./AcronymText";
 
 export type OrderSummary = {
   id: string;
@@ -82,7 +83,7 @@ export function OrderDetailsDrawer({ open, onClose, orders, currency, timezone, 
       <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint">{label}</p>
       <dl className="mt-2 grid grid-cols-[90px_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-ink-faint">Source</dt><dd>{visit.sourceDescription ?? visit.source}</dd>
-        <dt className="text-ink-faint">UTM source</dt><dd>{utm ? [utm.source, utm.medium].filter(Boolean).join(" / ") || "—" : "—"}</dd>
+        <dt className="text-ink-faint"><AcronymText>UTM source</AcronymText></dt><dd>{utm ? [utm.source, utm.medium].filter(Boolean).join(" / ") || "—" : "—"}</dd>
         <dt className="text-ink-faint">Campaign</dt><dd className="break-words">{resolved(utm?.campaign ?? null)}</dd>
         <dt className="text-ink-faint">Ad / content</dt><dd className="break-words">{resolved(utm?.content ?? null)}</dd>
         <dt className="text-ink-faint">Ad set / term</dt><dd className="break-words">{resolved(utm?.term ?? null)}</dd>

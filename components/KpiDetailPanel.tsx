@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { AcronymText } from "./AcronymText";
 
 export type KpiDetailColumn = {
   key: string;
@@ -58,8 +59,8 @@ export function KpiDetailPanel({ detail, from, to, timezone, onClose }: KpiDetai
       <section className="absolute inset-y-0 right-0 flex w-full max-w-[720px] flex-col bg-paper shadow-2xl">
         <header className="flex items-start justify-between gap-6 border-b border-rule bg-white px-5 py-5 sm:px-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">{detail.source}</p>
-            <h2 id="kpi-detail-title" className="font-display mt-1 text-2xl font-medium">{detail.label}</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><AcronymText>{detail.source}</AcronymText></p>
+            <h2 id="kpi-detail-title" className="font-display mt-1 text-2xl font-medium"><AcronymText>{detail.label}</AcronymText></h2>
             <p className="font-display mt-2 text-3xl font-medium tabular-nums">{detail.value}</p>
             <p className="mt-1 text-xs text-ink-faint">{from} – {to} · Daily breakdown · {timezone}</p>
           </div>
@@ -73,7 +74,7 @@ export function KpiDetailPanel({ detail, from, to, timezone, onClose }: KpiDetai
                 <tr>
                   <th className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint">Date</th>
                   {detail.columns.map((column) => (
-                    <th key={column.key} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${column.align === "left" ? "text-left" : "text-right"}`}>{column.label}</th>
+                    <th key={column.key} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${column.align === "left" ? "text-left" : "text-right"}`}><AcronymText>{column.label}</AcronymText></th>
                   ))}
                 </tr>
               </thead>

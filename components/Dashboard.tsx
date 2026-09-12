@@ -11,6 +11,7 @@ import { OrderDetailsDrawer, type OrderSummary } from "./OrderDetailsDrawer";
 import { KpiDetailPanel, type KpiDetail } from "./KpiDetailPanel";
 import { Ga4Analytics, type Ga4Data } from "./Ga4Analytics";
 import { KlaviyoAnalytics, type KlaviyoData } from "./KlaviyoAnalytics";
+import { AcronymText } from "./AcronymText";
 
 type ShopifyData = {
   from: string;
@@ -59,6 +60,11 @@ type MetaData = {
   }>;
 };
 
+type SourceRefreshStatus = {
+  source: "shopify" | "meta" | "ga4" | "klaviyo";
+  lastRefreshedAt: string | null;
+};
+
 const money = (value: number, currency = "USD") =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -66,8 +72,22 @@ const money = (value: number, currency = "USD") =>
     maximumFractionDigits: value >= 1000 ? 0 : 2,
   }).format(value);
 
+const DATE_RANGE_STORAGE_KEY = "kaahu-dashboard-date-range";
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isStoredRange(value: unknown): value is DateRange {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DateRange>;
+  if (!DATE_PATTERN.test(candidate.from ?? "") || !DATE_PATTERN.test(candidate.to ?? "")) return false;
+  if (typeof candidate.days !== "number" || ![0, 7, 30, 60, 90, 180, 365].includes(candidate.days)) return false;
+  const fromTime = Date.parse(`${candidate.from}T00:00:00Z`);
+  const toTime = Date.parse(`${candidate.to}T00:00:00Z`);
+  return Number.isFinite(fromTime) && Number.isFinite(toTime) && fromTime <= toTime && candidate.to! <= new Date().toISOString().slice(0, 10);
+}
+
 export function Dashboard() {
   const [range, setRange] = useState<DateRange>(() => DateRangePicker.defaultRange(30));
+  const [rangeRestored, setRangeRestored] = useState(false);
   const [shopify, setShopify] = useState<ShopifyData | null>(null);
   const [meta, setMeta] = useState<MetaData | null>(null);
   const [ga4, setGa4] = useState<Ga4Data | null>(null);
@@ -80,15 +100,41 @@ export function Dashboard() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [syncing, setSyncing] = useState(true);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
+  const [refreshStatuses, setRefreshStatuses] = useState<SourceRefreshStatus[]>([]);
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [activeReport, setActiveReport] = useState<"campaigns" | "geography" | "acquisition" | "retention">("campaigns");
 
   useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DATE_RANGE_STORAGE_KEY);
+      if (stored) {
+        const parsed: unknown = JSON.parse(stored);
+        if (isStoredRange(parsed)) setRange(parsed);
+        else window.localStorage.removeItem(DATE_RANGE_STORAGE_KEY);
+      }
+    } catch {
+      // Storage can be unavailable or contain invalid data; the default remains safe.
+    } finally {
+      setRangeRestored(true);
+    }
+  }, []);
+
+  const changeRange = (nextRange: DateRange) => {
+    setRange(nextRange);
+    try {
+      window.localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(nextRange));
+    } catch {
+      // The selected range still applies for this session when storage is unavailable.
+    }
+  };
+
+  useEffect(() => {
     let active = true;
     fetch("/api/sync", { method: "POST", cache: "no-store" })
       .then(async (response) => {
-        const body = (await response.json()) as { ok?: boolean; detail?: string };
+        const body = (await response.json()) as { ok?: boolean; detail?: string; refreshStatuses?: SourceRefreshStatus[] };
+        if (active && body.refreshStatuses) setRefreshStatuses(body.refreshStatuses);
         if (!response.ok) throw new Error(body.detail ?? "Latest data could not be synced");
         if (active && !body.ok) setSyncWarning("Some sources could not be refreshed; showing the latest stored data.");
       })
@@ -105,6 +151,7 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (!rangeRestored) return;
     const controller = new AbortController();
     setLoading(true);
     setShopifyError(null);
@@ -146,7 +193,7 @@ export function Dashboard() {
     });
 
     return () => controller.abort();
-  }, [range, refreshVersion]);
+  }, [range, rangeRestored, refreshVersion]);
 
   const blendedRoas = shopify && meta?.spend ? shopify.revenue / meta.spend : null;
   const blendedCac = shopify?.orderCount && meta ? meta.spend / shopify.orderCount : null;
@@ -247,6 +294,10 @@ export function Dashboard() {
     { name: "GA4", data: ga4, error: ga4Error },
     { name: "Klaviyo", data: klaviyo, error: klaviyoError },
   ];
+  const sourceLabels: Record<SourceRefreshStatus["source"], string> = { shopify: "Shopify", meta: "Meta Ads", ga4: "GA4", klaviyo: "Klaviyo" };
+  const formatRefreshTime = (value: string | null) => value
+    ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+    : "No successful refresh recorded";
   const connectedCount = sources.filter((source) => source.data && !source.error).length;
   const primaryInvalid = Boolean(shopifyError || metaError);
   const insights = useMemo(() => {
@@ -271,23 +322,28 @@ export function Dashboard() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Kaahu</p>
           <h1 className="font-display mt-2 text-[2rem] font-medium leading-tight tracking-[-0.03em] sm:text-[2.45rem]">Performance dashboard</h1>
-          <p className="mt-1.5 text-[13px] text-ink-soft">Shopify, Meta Ads, GA4, and Klaviyo · combined view{syncing ? " · refreshing latest data…" : ""}</p>
+          <p className="mt-1.5 text-[13px] text-ink-soft"><AcronymText>Shopify, Meta Ads, GA4, and Klaviyo · combined view</AcronymText>{syncing ? " · refreshing latest data…" : ""}</p>
           <details className="mt-3 sm:hidden">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-ink-soft">{loading ? "Connecting sources…" : `${connectedCount} of 4 sources connected`}</summary>
-            <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} />{source.name} {source.error ? "unavailable" : source.data ? "connected" : "connecting"}</span>)}</div>
+            <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} /><AcronymText>{source.name}</AcronymText> {source.error ? "unavailable" : source.data ? "connected" : "connecting"}</span>)}</div>
           </details>
           <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-faint sm:flex" aria-label="Connection status" aria-live="polite">
             <span className="uppercase tracking-[0.08em]">Connections</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${shopifyError ? "bg-brick" : shopify ? "bg-moss" : "bg-ink-faint"}`} />Shopify {shopifyError ? "unavailable" : shopify ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${metaError ? "bg-brick" : meta ? "bg-moss" : "bg-ink-faint"}`} />Meta Ads {metaError ? "unavailable" : meta ? "live" : "connecting"}</span>
-            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${ga4Error ? "bg-brick" : ga4 ? "bg-moss" : "bg-ink-faint"}`} />GA4 {ga4Error ? "unavailable" : ga4 ? "live" : "connecting"}</span>
+            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${ga4Error ? "bg-brick" : ga4 ? "bg-moss" : "bg-ink-faint"}`} /><AcronymText>GA4</AcronymText> {ga4Error ? "unavailable" : ga4 ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${klaviyoError ? "bg-brick" : klaviyo ? "bg-moss" : "bg-ink-faint"}`} />Klaviyo {klaviyoError ? "unavailable" : klaviyo ? "live" : "connecting"}</span>
           </div>
         </div>
-        <DateRangePicker value={range} onChange={setRange} />
+        <DateRangePicker value={range} onChange={changeRange} />
       </header>
 
-      {syncWarning && <div role="status" className="mt-6 rounded-lg border border-amber/30 bg-surface px-4 py-3 text-sm text-ink-soft">{syncWarning}</div>}
+      {syncWarning && <div role="status" className="mt-6 rounded-lg border border-amber/30 bg-surface px-4 py-3 text-sm text-ink-soft">
+        <p>{syncWarning}</p>
+        {refreshStatuses.length > 0 && <div className="mt-3 grid gap-x-6 gap-y-1.5 border-t border-rule pt-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          {refreshStatuses.map((status) => <p key={status.source}><span className="font-semibold text-ink">{sourceLabels[status.source]}</span><br /><span>Last refreshed: {formatRefreshTime(status.lastRefreshedAt)}</span></p>)}
+        </div>}
+      </div>}
 
       {(shopifyError || metaError || ga4Error || klaviyoError) && (
         <div role={primaryInvalid ? "alert" : "status"} className={`mt-6 rounded-lg border px-4 py-3 text-sm ${primaryInvalid ? "border-brick/30 bg-brick/5 text-brick" : "border-amber/30 bg-surface text-ink"}`}>
@@ -318,13 +374,13 @@ export function Dashboard() {
         <div role="tabpanel">
           {activeReport === "campaigns" && <CampaignTable campaigns={campaigns} range={range} />}
           {activeReport === "geography" && <MarketSpendPanel range={range} />}
-          {activeReport === "acquisition" && (ga4 ? <Ga4Analytics data={ga4} /> : <div className="rounded-xl border border-rule bg-surface p-8 text-sm text-ink-soft">{ga4Error ? "GA4 is unavailable for this range." : "Loading acquisition data…"}</div>)}
+          {activeReport === "acquisition" && (ga4 ? <Ga4Analytics data={ga4} from={range.from} to={range.to} /> : <div className="rounded-xl border border-rule bg-surface p-8 text-sm text-ink-soft">{ga4Error ? <><AcronymText>GA4</AcronymText> is unavailable for this range.</> : "Loading acquisition data…"}</div>)}
           {activeReport === "retention" && (klaviyo ? <KlaviyoAnalytics data={klaviyo} storeRevenue={shopify?.revenue ?? null} /> : <div className="rounded-xl border border-rule bg-surface p-8 text-sm text-ink-soft">{klaviyoError ? "Klaviyo is unavailable for this range." : "Loading retention data…"}</div>)}
         </div>
       </section>
 
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
-        Figures are refreshed into Supabase when the dashboard opens, then every report is read from Supabase. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.
+        <AcronymText>Figures are refreshed into Supabase when the dashboard opens, then every report is read from Supabase. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.</AcronymText>
       </footer>
       <KpiDetailPanel detail={activeKpi ? kpiDetails[activeKpi] ?? null : null} onClose={() => setActiveKpi(null)} from={range.from} to={range.to} timezone={shopify?.timezone ?? "Account timezones"} />
       {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={shopify.timezone} from={range.from} to={range.to} attributionLookup={attributionLookup} />}

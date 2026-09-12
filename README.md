@@ -21,7 +21,7 @@ The current product direction is documented in `kaahu-dashboard-design-spec.md`;
 
 The route uses Shopify's client-credentials flow and renews the temporary access token automatically. Cancelled, test, and zero-dollar orders are excluded; revenue uses each order's current total in the store currency.
 
-The dashboard supports preset 7-, 30-, and 60-day ranges plus a custom From/To picker. Custom ranges are limited to 60 days to match the installed Shopify app's order-access window.
+The dashboard supports preset 7-, 30-, 60-, 90-, 180-, and 365-day ranges plus an unrestricted custom From/To picker. The last applied preset or custom range is retained in the browser across refreshes.
 
 The dashboard's Orders KPI opens a sortable high-level order drawer for the selected date range. It shows order number, placed time, products and variants, item quantity, subtotal, discounts, total, financial and fulfillment status, destination city/state/country, and sales channel. It does not expose customer names, street addresses, emails, or phone numbers.
 

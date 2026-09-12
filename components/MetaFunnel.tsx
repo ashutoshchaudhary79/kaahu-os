@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PanelHeading } from "./PanelHeading";
+import { AcronymText } from "./AcronymText";
 
 type StageKey = "impressions" | "clicks" | "landingPageViews" | "addToCart" | "checkoutInitiated" | "purchases";
 type FunnelRole = "tofu" | "mofu" | "sales";
@@ -40,7 +41,7 @@ export function MetaFunnel({ steps, ads }: { steps: FunnelStep[]; ads: FunnelAd[
                 <div><dt className="text-ink-faint">Events</dt><dd className="mt-0.5 font-medium tabular-nums">{events.toLocaleString("en-US")}</dd></div>
                 <div><dt className="text-ink-faint">Share</dt><dd className="mt-0.5 font-medium tabular-nums">{total ? `${((events / total) * 100).toFixed(1)}%` : "—"}</dd></div>
                 <div><dt className="text-ink-faint">Spend</dt><dd className="mt-0.5 font-medium tabular-nums">{money(ad.spend)}</dd></div>
-                <div><dt className="text-ink-faint">{selectedStage === "impressions" ? "CPM" : "Cost / event"}</dt><dd className="mt-0.5 font-medium tabular-nums">{cost === null ? "—" : money(cost)}</dd></div>
+                <div><dt className="text-ink-faint"><AcronymText>{selectedStage === "impressions" ? "CPM" : "Cost / event"}</AcronymText></dt><dd className="mt-0.5 font-medium tabular-nums">{cost === null ? "—" : money(cost)}</dd></div>
               </dl>
             </article>;
           })}
@@ -69,7 +70,7 @@ export function MetaFunnel({ steps, ads }: { steps: FunnelStep[]; ads: FunnelAd[
             <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{selected.label} by ad</p><p className="mt-0.5 text-[11px] text-ink-faint">Compared within campaign funnel role</p></div><span className="shrink-0 text-xs font-medium tabular-nums">{total.toLocaleString("en-US")} total</span></div>
             <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Campaign funnel role">{(["tofu", "mofu", "sales"] as const).map((role) => {
               const count = ads.filter((ad) => ad.role === role).length;
-              return <button key={role} type="button" onClick={() => setSelectedRole(role)} aria-pressed={selectedRole === role} className={`rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${selectedRole === role ? "border-accent bg-accent text-white" : "border-rule bg-white text-ink-soft hover:border-accent/50"}`}>{roleLabels[role]} · {count}</button>;
+              return <button key={role} type="button" onClick={() => setSelectedRole(role)} aria-pressed={selectedRole === role} className={`rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 ${selectedRole === role ? "border-accent bg-accent text-white" : "border-rule bg-white text-ink-soft hover:border-accent/50"}`}><AcronymText>{roleLabels[role]}</AcronymText> · {count}</button>;
             })}</div>
             <section className="mt-4"><h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-moss">Top contributors</h3>{rankingTable(ranking.top, "No active ads reported.")}</section>
             <section className="mt-5"><h3 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-brick">Lowest contributors</h3>{rankingTable(ranking.bottom, ranking.top.length ? "All active ads are already shown above." : "No active ads reported.")}</section>

@@ -11,7 +11,7 @@
 
 - Shopify is implemented in `lib/shopify.ts` and `app/api/shopify/route.ts` using the client-credentials flow with automatic temporary-token renewal.
 - Shopify reporting excludes cancelled orders, test orders, and zero-dollar orders. Zero-dollar orders are UGC/collaboration orders and must stay excluded from revenue and order counts.
-- The installed Shopify app currently has `read_orders`, which generally limits order access to the most recent 60 days. Do not present longer combined ranges as complete until Shopify approves and grants `read_all_orders`.
+- Historical Shopify data has been extended into the reporting database. Dashboard reads may use the full stored date range; keep direct Shopify access read-only.
 - Meta is implemented in `lib/meta.ts`, `app/api/meta/route.ts`, `app/api/meta/drilldown/route.ts`, and `app/api/meta/markets/route.ts`.
 - Meta funnel actions are deduplicated using canonical pixel actions. Campaign rows expand to ad sets, and ad-set rows expand to ads.
 - Geographic reporting supports Meta `region` for State and `comscore_market` for Comscore markets. Meta suppresses conversion metrics for these geographic breakdowns on this account, so geographic reporting shows spend, share, impressions, link clicks, CTR, and CPM—not geographic ROAS.
@@ -19,7 +19,7 @@
 ## Current dashboard behavior
 
 - The main UI is `components/Dashboard.tsx`.
-- Date controls support 7-, 30-, and 60-day presets plus custom From/To dates, currently capped at 60 days because of Shopify's access window.
+- Date controls support 7-, 30-, 60-, 90-, 180-, and 365-day presets plus unrestricted custom From/To dates, and retain the last applied range across refreshes.
 - The Orders KPI opens a high-level order drawer showing order number/date, products and variants, quantities, totals/statuses, sales channel, and destination city/state/country. Do not add customer names, street addresses, email addresses, or phone numbers without an explicit requirement and privacy review.
 - Campaign, ad-set, ad, and geographic tables are sortable. Expanded geographic results remain in a bounded scrolling panel.
 - Sample/fallback data lives in `lib/sample-data.ts`; do not silently substitute sample data in a way that could be mistaken for live reporting.

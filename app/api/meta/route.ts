@@ -15,7 +15,6 @@ function range(request: NextRequest) {
   const fromTime = Date.parse(`${from}T00:00:00Z`);
   const toTime = Date.parse(`${to}T00:00:00Z`);
   if (!Number.isFinite(fromTime) || !Number.isFinite(toTime) || fromTime > toTime) throw new Error("The date range is invalid");
-  if ((toTime - fromTime) / 86_400_000 > 366) throw new Error("Date ranges cannot exceed 366 days");
   return { from, to };
 }
 
@@ -27,7 +26,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown Meta error";
-    const badRequest = detail.includes("date") || detail.includes("Dates") || detail.includes("366");
+    const badRequest = detail.includes("date") || detail.includes("Dates");
     console.error("Meta dashboard request failed:", detail);
     return NextResponse.json({ error: "Unable to load Meta data", detail }, { status: badRequest ? 400 : 502 });
   }

@@ -6,10 +6,11 @@ export function KpiCard({ label, value, delta, trend, onClick }: KpiCardProps) {
   return (
     <article className="min-w-0 rounded-xl border border-rule bg-surface shadow-[0_1px_2px_rgba(33,31,27,.04)]">
       <button type="button" onClick={onClick} disabled={!onClick} aria-label={label === "Orders" ? "View orders" : `View ${label} daily details`} className="min-h-[132px] h-full w-full rounded-xl p-4 text-left transition-colors hover:bg-white active:bg-accent-soft/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:hover:bg-transparent sm:p-[18px]">
-      <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint">{label}</p>
+      <p className="text-[11px] uppercase tracking-[0.04em] text-ink-faint"><AcronymText>{label}</AcronymText></p>
       <p className={`font-display mt-2 truncate text-[25px] font-medium tracking-[-0.02em] tabular-nums sm:text-[28px] ${valueClass}`}>{value}</p>
       <p className={`mt-2 text-[11px] leading-4 tabular-nums ${trendClass}`}>{delta}</p>
       </button>
     </article>
   );
 }
+import { AcronymText } from "./AcronymText";

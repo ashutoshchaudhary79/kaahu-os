@@ -26,7 +26,8 @@ export function DateRangePicker({ value, onChange }: { value: DateRange; onChang
   useEffect(() => {
     setFrom(value.from);
     setTo(value.to);
-  }, [value.from, value.to]);
+    setCustomOpen(value.days === 0);
+  }, [value.from, value.to, value.days]);
 
   const selectRange = (selection: string) => {
     setError(null);
@@ -54,11 +55,6 @@ export function DateRangePicker({ value, onChange }: { value: DateRange; onChang
       setError("Future dates are not available.");
       return;
     }
-    const inclusiveDays = Math.floor((toTime - fromTime) / 86_400_000) + 1;
-    if (inclusiveDays > 60) {
-      setError("Choose a range of 60 days or less.");
-      return;
-    }
     onChange({ from, to, days: 0 });
   };
 
@@ -71,6 +67,9 @@ export function DateRangePicker({ value, onChange }: { value: DateRange; onChang
           <option value="7">Last 7 days</option>
           <option value="30">Last 30 days</option>
           <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 180 days</option>
+          <option value="365">Last 365 days</option>
           <option value="custom">Custom dates</option>
         </select>
       </div>
