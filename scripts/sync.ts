@@ -6,6 +6,7 @@ import { getGa4DailyBreakdowns, getGa4Summary } from "../lib/ga4";
 import { getKlaviyoHistoricalRange } from "../lib/klaviyo";
 import { getMetaCampaignDaily, getMetaCreatives, getMetaEntityDaily, getMetaMarketDaily, MetaRateLimitError } from "../lib/meta";
 import { getShopifySummary } from "../lib/shopify";
+import { reportingDate } from "../lib/reporting-time";
 
 export type Source = "shopify" | "meta" | "ga4" | "klaviyo";
 type RunStatus = "success" | "partial" | "failed";
@@ -65,7 +66,7 @@ function redact(error: unknown): string {
 }
 
 async function rangeFor(source: Source, requestedFrom: string | undefined, requestedTo: string | undefined, sinceLast: boolean) {
-  const today = isoDay(new Date());
+  const today = reportingDate();
   if (requestedFrom && requestedTo) return { from: requestedFrom, to: requestedTo };
   if (sinceLast) {
     const result = await getDatabasePool().query<{ range_to: string | null }>(
@@ -80,8 +81,8 @@ async function rangeFor(source: Source, requestedFrom: string | undefined, reque
 
 async function syncShopify(from: string, to: string, dryRun: boolean): Promise<SyncResult> {
   const summary = await getShopifySummary(from, to);
-  if (!summary.hasReadAllOrders && from < shiftDay(isoDay(new Date()), -60)) {
-    console.warn(`Shopify lacks read_all_orders; results before ${shiftDay(isoDay(new Date()), -60)} may be incomplete`);
+  if (!summary.hasReadAllOrders && from < shiftDay(reportingDate(), -60)) {
+    console.warn(`Shopify lacks read_all_orders; results before ${shiftDay(reportingDate(), -60)} may be incomplete`);
   }
   const customerIds = summary.orders.filter((order) => order.customerId).length;
   const customerHashes = summary.orders.filter((order) => hashEmail(order.customerEmail)).length;

@@ -46,7 +46,9 @@ function privateKey() {
   if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
     value = value.slice(1, -1);
   }
-  value = value.replace(/\\r?\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+  // Vercel commonly preserves PEM line breaks as literal `\\n`, while local
+  // dotenv parsing may provide real newlines. Normalize both representations.
+  value = value.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
   if (!value.includes("-----BEGIN PRIVATE KEY-----") || !value.includes("-----END PRIVATE KEY-----")) {
     throw new Error("GA4_PRIVATE_KEY is not a valid PEM private key");
   }

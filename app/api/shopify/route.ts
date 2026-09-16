@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getShopifySummaryFromDb } from "@/lib/dashboard-data";
+import { reportingRange } from "@/lib/reporting-time";
 
 export const dynamic = "force-dynamic";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function defaultRange() {
-  const to = new Date();
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - 29);
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
+  return reportingRange(30);
 }
 
 function parseRange(request: NextRequest) {

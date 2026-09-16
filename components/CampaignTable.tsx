@@ -14,18 +14,22 @@ export type PerformanceRow = {
   ctr: string;
   cpc: string;
   cpm: string;
+  landingPageViews: string;
+  addToCart: string;
+  checkoutInitiated: string;
   purchases: string;
   roas: string;
   cpa: string;
   strong: boolean;
   objective?: string;
   role?: "tofu" | "mofu" | "sales";
-  raw: { spend: number; frequency: number; ctr: number; cpc: number; cpm: number; purchases: number; roas: number; cpa: number | null };
+  raw: { spend: number; frequency: number; ctr: number; cpc: number; cpm: number; landingPageViews: number; addToCart: number; checkoutInitiated: number; purchases: number; roas: number; cpa: number | null };
 };
 
 type ApiRow = {
   id: string; name: string; spend: number; impressions: number; clicks: number;
-  purchases: number; frequency: number; ctr: number; cpc: number; cpm: number; roas: number; cpa: number | null;
+  landingPageViews: number; addToCart: number; checkoutInitiated: number; purchases: number;
+  frequency: number; ctr: number; cpc: number; cpm: number; roas: number; cpa: number | null;
 };
 type ChildLevel = "adset" | "ad";
 
@@ -39,11 +43,14 @@ const formatRow = (row: ApiRow): PerformanceRow => ({
   ctr: `${row.ctr.toFixed(2)}%`,
   cpc: money(row.cpc),
   cpm: money(row.cpm),
+  landingPageViews: row.landingPageViews.toLocaleString("en-US"),
+  addToCart: row.addToCart.toLocaleString("en-US"),
+  checkoutInitiated: row.checkoutInitiated.toLocaleString("en-US"),
   purchases: row.purchases.toLocaleString("en-US"),
   roas: `${row.roas.toFixed(2)}×`,
   cpa: row.cpa === null ? "—" : money(row.cpa),
   strong: row.roas >= 3,
-  raw: { spend: row.spend, frequency: row.frequency, ctr: row.ctr, cpc: row.cpc, cpm: row.cpm, purchases: row.purchases, roas: row.roas, cpa: row.cpa },
+  raw: { spend: row.spend, frequency: row.frequency, ctr: row.ctr, cpc: row.cpc, cpm: row.cpm, landingPageViews: row.landingPageViews, addToCart: row.addToCart, checkoutInitiated: row.checkoutInitiated, purchases: row.purchases, roas: row.roas, cpa: row.cpa },
 });
 
 export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[]; range: DateRange }) {
@@ -122,7 +129,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
 
   const cells = (row: PerformanceRow) => (
     <>
-      {[row.spend, row.frequency, row.ctr, row.cpc, row.cpm, row.purchases].map((value, index) => <td key={index} className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{value}</td>)}
+      {[row.spend, row.frequency, row.ctr, row.cpc, row.cpm, row.landingPageViews, row.addToCart, row.checkoutInitiated, row.purchases].map((value, index) => <td key={index} className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{value}</td>)}
       <td className={`border-b border-rule px-3 py-3.5 text-right font-semibold tabular-nums ${row.strong ? "text-moss" : "text-brick"}`}>{row.roas}</td>
       <td className="border-b border-rule px-3 py-3.5 text-right tabular-nums">{row.cpa}</td>
     </>
@@ -166,10 +173,36 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   };
 
   const statusRow = (key: string, depth: number) => {
-    if (loading.has(key)) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>Loading…</td></tr>;
-    if (errors[key]) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-brick" style={{ paddingLeft: `${36 + depth * 22}px` }}>{errors[key]}</td></tr>;
-    if (children[key]?.length === 0) return <tr><td colSpan={9} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>No delivery in this date range.</td></tr>;
+    if (loading.has(key)) return <tr><td colSpan={12} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>Loading…</td></tr>;
+    if (errors[key]) return <tr><td colSpan={12} className="border-b border-rule py-4 text-xs text-brick" style={{ paddingLeft: `${36 + depth * 22}px` }}>{errors[key]}</td></tr>;
+    if (children[key]?.length === 0) return <tr><td colSpan={12} className="border-b border-rule py-4 text-xs text-ink-faint" style={{ paddingLeft: `${36 + depth * 22}px` }}>No delivery in this date range.</td></tr>;
     return null;
+  };
+
+  const funnelMetrics = (row: PerformanceRow) => <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px]">
+    <div><dt className="text-ink-faint">Landing views</dt><dd className="mt-0.5 font-medium tabular-nums">{row.landingPageViews}</dd></div>
+    <div><dt className="text-ink-faint">Add to cart</dt><dd className="mt-0.5 font-medium tabular-nums">{row.addToCart}</dd></div>
+    <div><dt className="text-ink-faint">Checkouts</dt><dd className="mt-0.5 font-medium tabular-nums">{row.checkoutInitiated}</dd></div>
+    <div><dt className="text-ink-faint">Purchases</dt><dd className="mt-0.5 font-medium tabular-nums">{row.purchases}</dd></div>
+  </dl>;
+
+  const mobileAdSet = (adset: PerformanceRow) => {
+    const adKey = `ad:${adset.id}`;
+    const adsOpen = expanded.has(adKey);
+    return <article key={adset.id} className="mt-3 rounded-lg border border-rule bg-paper/60 p-3">
+      <button type="button" onClick={() => toggle("ad", adset)} aria-expanded={adsOpen} className="flex min-h-11 w-full items-start justify-between gap-3 text-left">
+        <span className="font-semibold leading-5">{adset.name}<span className="mt-0.5 block text-[10px] font-normal text-ink-faint">Ad set · {adset.spend} spend</span></span>
+        <span className="shrink-0 font-medium tabular-nums text-accent">{adsOpen ? "Hide ads ↑" : "Show ads ↓"}</span>
+      </button>
+      <div className="mt-2 border-t border-rule pt-3">{funnelMetrics(adset)}</div>
+      {loading.has(adKey) && <p className="mt-3 text-ink-faint">Loading ads…</p>}
+      {errors[adKey] && <p className="mt-3 text-brick">{errors[adKey]}</p>}
+      {adsOpen && children[adKey]?.map((ad) => <div key={ad.id} className="mt-3 border-t border-rule pt-3">
+        <div className="mb-2 flex items-start justify-between gap-3"><span className="font-medium">{ad.name}<span className="mt-0.5 block text-[10px] font-normal text-ink-faint">Ad</span></span><span className="shrink-0 tabular-nums">{ad.spend} · {ad.roas}</span></div>
+        {funnelMetrics(ad)}
+      </div>)}
+      {adsOpen && children[adKey]?.length === 0 && <p className="mt-3 text-ink-faint">No ads delivered in this range.</p>}
+    </article>;
   };
 
   return (
@@ -187,21 +220,30 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
             <div className="flex items-start justify-between gap-3"><button type="button" onClick={() => openCampaignDetail(campaign)} className="min-h-11 text-left font-semibold leading-5 text-ink hover:text-accent">{campaign.name}<span className="mt-1 block text-[11px] font-normal text-ink-faint">{campaign.type}</span></button><span className={`font-display text-lg tabular-nums ${campaign.strong ? "text-moss" : "text-brick"}`}>{campaign.roas}</span></div>
             <dl className="mt-3 grid grid-cols-3 gap-3 border-y border-rule py-3 text-xs"><div><dt className="text-ink-faint">Spend</dt><dd className="mt-1 font-semibold tabular-nums text-orange">{campaign.spend}</dd></div><div><dt className="text-ink-faint">Purchases</dt><dd className="mt-1 font-semibold tabular-nums">{campaign.purchases}</dd></div><div><dt className="text-ink-faint"><AcronymText>CPA</AcronymText></dt><dd className="mt-1 font-semibold tabular-nums">{campaign.cpa}</dd></div></dl>
             <button type="button" onClick={() => toggle("adset", campaign)} aria-expanded={isOpen} className="mt-2 min-h-11 w-full text-left text-xs font-semibold text-accent">{isOpen ? "Hide ad sets and metrics" : "Show ad sets and more metrics"} <span aria-hidden="true">{isOpen ? "↑" : "↓"}</span></button>
-            {isOpen && <div className="border-t border-rule pt-3 text-xs"><dl className="grid grid-cols-3 gap-3"><div><dt className="text-ink-faint"><AcronymText>CTR</AcronymText></dt><dd>{campaign.ctr}</dd></div><div><dt className="text-ink-faint"><AcronymText>CPC</AcronymText></dt><dd>{campaign.cpc}</dd></div><div><dt className="text-ink-faint"><AcronymText>CPM</AcronymText></dt><dd>{campaign.cpm}</dd></div></dl>{loading.has(key) && <p className="mt-3 text-ink-faint">Loading ad sets…</p>}{errors[key] && <p className="mt-3 text-brick">{errors[key]}</p>}{children[key]?.map((child) => <div key={child.id} className="mt-3 flex justify-between gap-3 border-t border-rule pt-3"><span>{child.name}</span><span className="tabular-nums">{child.spend} · {child.roas}</span></div>)}</div>}
+            {isOpen && <div className="border-t border-rule pt-3 text-xs">
+              <dl className="mb-3 grid grid-cols-3 gap-3"><div><dt className="text-ink-faint"><AcronymText>CTR</AcronymText></dt><dd>{campaign.ctr}</dd></div><div><dt className="text-ink-faint"><AcronymText>CPC</AcronymText></dt><dd>{campaign.cpc}</dd></div><div><dt className="text-ink-faint"><AcronymText>CPM</AcronymText></dt><dd>{campaign.cpm}</dd></div></dl>
+              {funnelMetrics(campaign)}
+              {loading.has(key) && <p className="mt-3 text-ink-faint">Loading ad sets…</p>}
+              {errors[key] && <p className="mt-3 text-brick">{errors[key]}</p>}
+              {children[key]?.map(mobileAdSet)}
+            </div>}
           </article>;
         })}
       </div>
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[940px] border-collapse text-[13px]">
+        <table className="w-full min-w-[1240px] border-collapse text-[13px]">
           <thead className="sticky top-0 z-10 bg-surface"><tr>{[
             { label: "Campaign / ad set / ad", key: "name" as const }, { label: "Spend", key: "spend" as const },
             { label: "Avg daily frequency", key: "frequency" as const },
             { label: "CTR", key: "ctr" as const }, { label: "CPC", key: "cpc" as const },
             { label: "CPM", key: "cpm" as const },
+            { label: "Landing views", key: "landingPageViews" as const },
+            { label: "Add to cart", key: "addToCart" as const },
+            { label: "Checkouts", key: "checkoutInitiated" as const },
             { label: "Purchases", key: "purchases" as const }, { label: "ROAS", key: "roas" as const }, { label: "CPA", key: "cpa" as const },
           ].map((header, index) => <th key={header.key} aria-sort={sort.key === header.key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className={`border-b border-rule px-3 pb-2.5 text-[11px] font-medium uppercase tracking-[0.04em] text-ink-faint ${index ? "text-right" : "sticky left-0 z-20 bg-surface text-left"}`}><button type="button" onClick={() => updateSort(header.key)} className={`min-h-11 inline-flex items-center gap-1 hover:text-ink ${index ? "justify-end" : "justify-start"}`}><AcronymText>{header.label}</AcronymText><span aria-hidden="true" className={sort.key === header.key ? "text-accent" : "text-rule"}>{sortMark(header.key)}</span></button></th>)}</tr></thead>
           <tbody>
-            {!campaigns.length && <tr><td colSpan={9} className="px-3 py-12 text-center text-ink-faint">No campaigns had delivery in this date range.</td></tr>}
+            {!campaigns.length && <tr><td colSpan={12} className="px-3 py-12 text-center text-ink-faint">No campaigns had delivery in this date range.</td></tr>}
             {sortedRows(campaigns).map((campaign) => {
               const adsetKey = `adset:${campaign.id}`;
               return <Fragment key={campaign.id}>

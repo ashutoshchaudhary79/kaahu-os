@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMetaSummaryFromDb } from "@/lib/dashboard-data";
+import { reportingRange } from "@/lib/reporting-time";
 
 export const dynamic = "force-dynamic";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function range(request: NextRequest) {
-  const now = new Date();
-  const prior = new Date(now);
-  prior.setUTCDate(prior.getUTCDate() - 29);
-  const from = request.nextUrl.searchParams.get("from") ?? prior.toISOString().slice(0, 10);
-  const to = request.nextUrl.searchParams.get("to") ?? now.toISOString().slice(0, 10);
+  const defaults = reportingRange(30);
+  const from = request.nextUrl.searchParams.get("from") ?? defaults.from;
+  const to = request.nextUrl.searchParams.get("to") ?? defaults.to;
   if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to)) throw new Error("Dates must use YYYY-MM-DD format");
   const fromTime = Date.parse(`${from}T00:00:00Z`);
   const toTime = Date.parse(`${to}T00:00:00Z`);

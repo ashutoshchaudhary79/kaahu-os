@@ -1,16 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { reportingDate, reportingRange } from "@/lib/reporting-time";
 
 export type DateRange = { from: string; to: string; days: number };
 
-const isoDate = (date: Date) => date.toISOString().slice(0, 10);
-
 function defaultRange(days: number): DateRange {
-  const to = new Date();
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - (days - 1));
-  return { from: isoDate(from), to: isoDate(to), days };
+  return { ...reportingRange(days), days };
 }
 
 const displayDate = (value: string) =>
@@ -21,7 +17,7 @@ export function DateRangePicker({ value, onChange }: { value: DateRange; onChang
   const [from, setFrom] = useState(value.from);
   const [to, setTo] = useState(value.to);
   const [error, setError] = useState<string | null>(null);
-  const today = isoDate(new Date());
+  const today = reportingDate();
 
   useEffect(() => {
     setFrom(value.from);
@@ -63,7 +59,7 @@ export function DateRangePicker({ value, onChange }: { value: DateRange; onChang
       <div className="flex w-full flex-col gap-2 text-[13px] sm:flex-row sm:items-center sm:gap-3">
         <span className="font-medium tabular-nums">{displayDate(value.from)} – {displayDate(value.to)}</span>
         <label className="sr-only" htmlFor="date-range">Date range</label>
-        <select id="date-range" value={customOpen ? "custom" : String(value.days)} onChange={(event) => selectRange(event.target.value)} className="min-h-11 w-full rounded-lg border border-rule bg-surface px-3 text-[13px] outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 sm:w-auto">
+        <select id="date-range" value={customOpen ? "custom" : String(value.days)} onChange={(event) => selectRange(event.target.value)} className="min-h-11 w-full rounded-lg border border-rule bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 sm:w-auto">
           <option value="7">Last 7 days</option>
           <option value="30">Last 30 days</option>
           <option value="60">Last 60 days</option>

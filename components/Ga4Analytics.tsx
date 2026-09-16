@@ -46,7 +46,7 @@ export function Ga4Analytics({ data, from, to }: { data: Ga4Data; from: string; 
   return <section className="mt-8 space-y-6" aria-label="Google Analytics 4 reporting">
     <article className="rounded border border-rule bg-white p-5 sm:p-6">
       <PanelHeading title="Site acquisition · GA4" note="Session-scoped attribution" />
-      <div className="mb-5 grid overflow-hidden rounded border border-rule sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-5 grid grid-cols-2 overflow-hidden rounded border border-rule sm:grid-cols-3 lg:grid-cols-6">
         {[["Sessions", integer(data.totals.sessions)], ["User-days", integer(data.totals.users)], ["New-user events", integer(data.totals.newUsers)], ["Returning user-days", integer(data.totals.returningUsers)], ["Conversion rate", percent(data.totals.conversionRate)], ["GA4 revenue", money(data.totals.revenue)]].map(([label, value]) => <div key={label} className="border-b border-rule p-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"><p className="text-[10px] uppercase tracking-wide text-ink-faint"><AcronymText>{label}</AcronymText></p><p className="mt-1 text-lg font-semibold tabular-nums">{value}</p></div>)}
       </div>
       <div className="mb-3 flex flex-wrap gap-1.5">{["All channels", ...data.channels.map((row) => row.channel)].map((name) => <button key={name} type="button" onClick={() => setChannel(name)} aria-pressed={channel === name} className={`rounded-full border px-2.5 py-1 text-[10px] font-medium ${channel === name ? "border-accent bg-accent text-white" : "border-rule bg-white text-ink-soft"}`}>{name}</button>)}</div>

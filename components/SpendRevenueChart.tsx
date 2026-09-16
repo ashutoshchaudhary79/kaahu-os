@@ -189,7 +189,14 @@ export function SpendRevenueChart({ revenueDaily, spendDaily, dailyAds, from, to
           <button type="button" aria-pressed={showSpend} onClick={() => setShowSpend((shown) => !shown)} className={`rounded-lg border px-2.5 py-1.5 font-medium ${showSpend ? "border-brick bg-brick text-white" : "border-rule bg-white text-ink-soft"}`}>Spend</button>
           <button type="button" aria-pressed={showRollingSales} onClick={() => setShowRollingSales((shown) => !shown)} className={`rounded-lg border px-2.5 py-1.5 font-medium ${showRollingSales ? "border-[#167788] bg-[#167788] text-white" : "border-rule bg-white text-ink-soft"}`}>Rolling sales</button>
           <button type="button" aria-pressed={showRollingRoas} onClick={() => setShowRollingRoas((shown) => !shown)} className={`rounded-lg border px-2.5 py-1.5 font-medium ${showRollingRoas ? "border-[#7057a3] bg-[#7057a3] text-white" : "border-rule bg-white text-ink-soft"}`}><AcronymText>Rolling ROAS</AcronymText></button>
-          <label className="flex items-center gap-1.5 text-ink-soft">Window<input aria-label="Rolling window in days" type="number" min={3} max={60} value={rollingDays} onChange={(event) => changeRollingDays(Number(event.target.value))} className="w-16 rounded-lg border border-rule bg-white px-2 py-1.5 text-right tabular-nums text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/15" /><span>days</span></label>
+          <div className="flex w-full items-center gap-1.5 text-ink-soft sm:w-auto" role="group" aria-label="Rolling ROAS window">
+            <span className="mr-1">Window</span>
+            <button type="button" aria-label="Decrease rolling window" disabled={rollingDays <= 3} onClick={() => changeRollingDays(rollingDays - 1)} className="h-11 w-11 rounded-lg border border-rule bg-white text-lg text-ink disabled:opacity-35">−</button>
+            <label className="sr-only" htmlFor="rolling-window-days">Rolling window in days</label>
+            <input id="rolling-window-days" aria-label="Rolling window in days" inputMode="numeric" type="number" min={3} max={60} value={rollingDays} onChange={(event) => changeRollingDays(Number(event.target.value))} className="h-11 w-14 rounded-lg border border-rule bg-white px-2 text-center tabular-nums text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/15" />
+            <button type="button" aria-label="Increase rolling window" disabled={rollingDays >= 60} onClick={() => changeRollingDays(rollingDays + 1)} className="h-11 w-11 rounded-lg border border-rule bg-white text-lg text-ink disabled:opacity-35">+</button>
+            <span>days</span>
+          </div>
         </div>
       </div>
       <div className="mb-3 mt-3 flex min-h-4 flex-wrap justify-end gap-4 text-[11px] text-ink-soft">

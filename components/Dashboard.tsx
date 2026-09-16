@@ -12,6 +12,7 @@ import { KpiDetailPanel, type KpiDetail } from "./KpiDetailPanel";
 import { Ga4Analytics, type Ga4Data } from "./Ga4Analytics";
 import { KlaviyoAnalytics, type KlaviyoData } from "./KlaviyoAnalytics";
 import { AcronymText } from "./AcronymText";
+import { REPORTING_TIME_ZONE, reportingDate } from "@/lib/reporting-time";
 
 type ShopifyData = {
   from: string;
@@ -82,7 +83,7 @@ function isStoredRange(value: unknown): value is DateRange {
   if (typeof candidate.days !== "number" || ![0, 7, 30, 60, 90, 180, 365].includes(candidate.days)) return false;
   const fromTime = Date.parse(`${candidate.from}T00:00:00Z`);
   const toTime = Date.parse(`${candidate.to}T00:00:00Z`);
-  return Number.isFinite(fromTime) && Number.isFinite(toTime) && fromTime <= toTime && candidate.to! <= new Date().toISOString().slice(0, 10);
+  return Number.isFinite(fromTime) && Number.isFinite(toTime) && fromTime <= toTime && candidate.to! <= reportingDate();
 }
 
 export function Dashboard() {
@@ -110,7 +111,7 @@ export function Dashboard() {
       const stored = window.localStorage.getItem(DATE_RANGE_STORAGE_KEY);
       if (stored) {
         const parsed: unknown = JSON.parse(stored);
-        if (isStoredRange(parsed)) setRange(parsed);
+        if (isStoredRange(parsed)) setRange(parsed.days === 0 ? parsed : DateRangePicker.defaultRange(parsed.days));
         else window.localStorage.removeItem(DATE_RANGE_STORAGE_KEY);
       }
     } catch {
@@ -272,13 +273,16 @@ export function Dashboard() {
     ctr: `${campaign.ctr.toFixed(2)}%`,
     cpc: money(campaign.cpc),
     cpm: money(campaign.cpm),
+    landingPageViews: campaign.landingPageViews.toLocaleString("en-US"),
+    addToCart: campaign.addToCart.toLocaleString("en-US"),
+    checkoutInitiated: campaign.checkoutInitiated.toLocaleString("en-US"),
     purchases: campaign.purchases.toLocaleString("en-US"),
     roas: `${campaign.roas.toFixed(2)}×`,
     cpa: campaign.cpa === null ? "—" : money(campaign.cpa),
     objective: campaign.objective,
     role: campaign.role,
     strong: campaign.roas >= 3,
-    raw: { spend: campaign.spend, frequency: campaign.frequency, ctr: campaign.ctr, cpc: campaign.cpc, cpm: campaign.cpm, purchases: campaign.purchases, roas: campaign.roas, cpa: campaign.cpa },
+    raw: { spend: campaign.spend, frequency: campaign.frequency, ctr: campaign.ctr, cpc: campaign.cpc, cpm: campaign.cpm, landingPageViews: campaign.landingPageViews, addToCart: campaign.addToCart, checkoutInitiated: campaign.checkoutInitiated, purchases: campaign.purchases, roas: campaign.roas, cpa: campaign.cpa },
   })), [meta]);
 
   const attributionLookup = useMemo(() => {
@@ -296,7 +300,7 @@ export function Dashboard() {
   ];
   const sourceLabels: Record<SourceRefreshStatus["source"], string> = { shopify: "Shopify", meta: "Meta Ads", ga4: "GA4", klaviyo: "Klaviyo" };
   const formatRefreshTime = (value: string | null) => value
-    ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: REPORTING_TIME_ZONE, timeZoneName: "short" }).format(new Date(value))
     : "No successful refresh recorded";
   const connectedCount = sources.filter((source) => source.data && !source.error).length;
   const primaryInvalid = Boolean(shopifyError || metaError);
@@ -370,7 +374,7 @@ export function Dashboard() {
 
       <section aria-labelledby="reports-title">
         <h2 id="reports-title" className="sr-only">Detailed reporting</h2>
-        <div className="mb-4 overflow-x-auto" role="tablist" aria-label="Detailed reports"><div className="inline-flex min-w-max gap-1 rounded-xl border border-rule bg-surface p-1">{([['campaigns','Campaigns'],['geography','Geography'],['acquisition','Acquisition'],['retention','Retention']] as const).map(([key,label]) => <button key={key} role="tab" aria-selected={activeReport === key} onClick={() => setActiveReport(key)} className={`min-h-11 rounded-lg px-4 text-sm font-semibold transition-colors ${activeReport === key ? "bg-accent text-white" : "text-ink-soft hover:bg-paper"}`}>{label}</button>)}</div></div>
+        <div className="mb-4" role="tablist" aria-label="Detailed reports"><div className="grid grid-cols-2 gap-1 rounded-xl border border-rule bg-surface p-1 sm:inline-flex">{([['campaigns','Campaigns'],['geography','Geography'],['acquisition','Acquisition'],['retention','Retention']] as const).map(([key,label]) => <button key={key} role="tab" aria-selected={activeReport === key} onClick={() => setActiveReport(key)} className={`min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors sm:px-4 ${activeReport === key ? "bg-accent text-white" : "text-ink-soft hover:bg-paper"}`}>{label}</button>)}</div></div>
         <div role="tabpanel">
           {activeReport === "campaigns" && <CampaignTable campaigns={campaigns} range={range} />}
           {activeReport === "geography" && <MarketSpendPanel range={range} />}
@@ -382,8 +386,8 @@ export function Dashboard() {
       <footer className="mt-8 border-t border-rule pt-4 text-[11px] text-ink-faint">
         <AcronymText>Figures are refreshed into Supabase when the dashboard opens, then every report is read from Supabase. GA4 conversion rate uses site-wide sessions and transactions; Meta and Klaviyo retain their own attribution settings.</AcronymText>
       </footer>
-      <KpiDetailPanel detail={activeKpi ? kpiDetails[activeKpi] ?? null : null} onClose={() => setActiveKpi(null)} from={range.from} to={range.to} timezone={shopify?.timezone ?? "Account timezones"} />
-      {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={shopify.timezone} from={range.from} to={range.to} attributionLookup={attributionLookup} />}
+      <KpiDetailPanel detail={activeKpi ? kpiDetails[activeKpi] ?? null : null} onClose={() => setActiveKpi(null)} from={range.from} to={range.to} timezone={REPORTING_TIME_ZONE} />
+      {shopify && <OrderDetailsDrawer open={ordersOpen} onClose={() => setOrdersOpen(false)} orders={shopify.orders} currency={shopify.currency} timezone={REPORTING_TIME_ZONE} from={range.from} to={range.to} attributionLookup={attributionLookup} />}
     </main>
   );
 }
