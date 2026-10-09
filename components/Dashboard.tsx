@@ -101,6 +101,7 @@ export function Dashboard() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [syncing, setSyncing] = useState(true);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
+  const [metaRefreshFailed, setMetaRefreshFailed] = useState(false);
   const [refreshStatuses, setRefreshStatuses] = useState<SourceRefreshStatus[]>([]);
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   const [ordersOpen, setOrdersOpen] = useState(false);
@@ -134,10 +135,16 @@ export function Dashboard() {
     let active = true;
     fetch("/api/sync", { method: "POST", cache: "no-store" })
       .then(async (response) => {
-        const body = (await response.json()) as { ok?: boolean; detail?: string; refreshStatuses?: SourceRefreshStatus[] };
+        const body = (await response.json()) as { ok?: boolean; detail?: string; refreshStatuses?: SourceRefreshStatus[]; outcomes?: Array<{ source: string; status: string; errorCode?: string }> };
         if (active && body.refreshStatuses) setRefreshStatuses(body.refreshStatuses);
         if (!response.ok) throw new Error(body.detail ?? "Latest data could not be synced");
-        if (active && !body.ok) setSyncWarning("Some sources could not be refreshed; showing the latest stored data.");
+        if (active) {
+          const metaOutcome = body.outcomes?.find((outcome) => outcome.source === "meta");
+          setMetaRefreshFailed(Boolean(metaOutcome && metaOutcome.status !== "success"));
+          if (!body.ok) setSyncWarning(metaOutcome?.errorCode === "META_AUTHENTICATION_REQUIRED"
+            ? "Meta Ads access has expired or is invalid. Reconnect Meta to resume refreshing. Showing the latest stored data."
+            : "Some sources could not be refreshed; showing the latest stored data.");
+        }
       })
       .catch(() => {
         if (active) setSyncWarning("Latest data could not be refreshed; showing the latest stored data.");
@@ -329,12 +336,12 @@ export function Dashboard() {
           <p className="mt-1.5 text-[13px] text-ink-soft"><AcronymText>Shopify, Meta Ads, GA4, and Klaviyo · combined view</AcronymText>{syncing ? " · refreshing latest data…" : ""}</p>
           <details className="mt-3 sm:hidden">
             <summary className="min-h-11 cursor-pointer content-center text-xs font-medium text-ink-soft">{loading ? "Connecting sources…" : `${connectedCount} of 4 sources connected`}</summary>
-            <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} /><AcronymText>{source.name}</AcronymText> {source.error ? "unavailable" : source.data ? "connected" : "connecting"}</span>)}</div>
+            <div className="grid gap-2 pb-1" aria-live="polite">{sources.map((source) => <span key={source.name} className="inline-flex items-center gap-2 text-xs"><span className={`h-2 w-2 rounded-full ${source.error ? "bg-brick" : source.data ? "bg-moss" : "bg-ink-faint"}`} /><AcronymText>{source.name}</AcronymText> {source.error ? "unavailable" : source.name === "Meta Ads" && metaRefreshFailed ? "refresh failed · stored data" : source.data ? "connected" : "connecting"}</span>)}</div>
           </details>
           <div className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-faint sm:flex" aria-label="Connection status" aria-live="polite">
             <span className="uppercase tracking-[0.08em]">Connections</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${shopifyError ? "bg-brick" : shopify ? "bg-moss" : "bg-ink-faint"}`} />Shopify {shopifyError ? "unavailable" : shopify ? "live" : "connecting"}</span>
-            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${metaError ? "bg-brick" : meta ? "bg-moss" : "bg-ink-faint"}`} />Meta Ads {metaError ? "unavailable" : meta ? "live" : "connecting"}</span>
+            <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${metaError || metaRefreshFailed ? "bg-brick" : meta ? "bg-moss" : "bg-ink-faint"}`} />Meta Ads {metaError ? "unavailable" : metaRefreshFailed ? "refresh failed · stored data" : meta ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${ga4Error ? "bg-brick" : ga4 ? "bg-moss" : "bg-ink-faint"}`} /><AcronymText>GA4</AcronymText> {ga4Error ? "unavailable" : ga4 ? "live" : "connecting"}</span>
             <span className="inline-flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${klaviyoError ? "bg-brick" : klaviyo ? "bg-moss" : "bg-ink-faint"}`} />Klaviyo {klaviyoError ? "unavailable" : klaviyo ? "live" : "connecting"}</span>
           </div>

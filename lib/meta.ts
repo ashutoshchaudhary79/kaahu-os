@@ -121,6 +121,12 @@ export type MetaCreative = { adId: string; campaignId: string | null; adName: st
 export type MetaMarketDaily = MetaMarket & { date: string };
 
 export class MetaRateLimitError extends Error {}
+export class MetaAuthenticationError extends Error {
+  constructor() {
+    super("Meta access token has expired or is invalid. Reconnect Meta to resume refreshing; showing the latest stored data.");
+    this.name = "MetaAuthenticationError";
+  }
+}
 
 let metaPauseUntil = 0;
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -225,6 +231,35 @@ async function fetchAll<T>(path: string, params: URLSearchParams): Promise<T[]> 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       body = (await response.json()) as MetaPage<T>;
+      if (body.error?.code === 190) throw new MetaAuthenticationError();
+      // Meta may reject dense daily breakdowns even with pagination. Split
+      // only daily reports: range totals (especially reach) cannot be summed.
+      if (body.error?.message?.includes("reduce the amount of data") && params.get("time_increment") === "1") {
+        const range = JSON.parse(params.get("time_range") ?? "{}") as { since?: string; until?: string };
+        if (range.since && range.until && range.since < range.until) {
+          const start = Date.parse(`${range.since}T00:00:00Z`);
+          const end = Date.parse(`${range.until}T00:00:00Z`);
+          const day = 86_400_000;
+          const midpoint = start + Math.floor((end - start) / day / 2) * day;
+          const first = new URLSearchParams(params);
+          const second = new URLSearchParams(params);
+          first.set("time_range", JSON.stringify({ since: range.since, until: new Date(midpoint).toISOString().slice(0, 10) }));
+          second.set("time_range", JSON.stringify({ since: new Date(midpoint + day).toISOString().slice(0, 10), until: range.until }));
+          // Discard any pages already collected for the original range.
+          // Sequential retries also avoid adding pressure to Meta's limits.
+          const firstRows = await fetchAll<T>(path, first);
+          const secondRows = await fetchAll<T>(path, second);
+          return [...firstRows, ...secondRows];
+        }
+      }
+      if (body.error?.message?.includes("reduce the amount of data")) {
+        const limit = Number(params.get("limit") ?? 0);
+        if (limit > 1) {
+          const smallerPage = new URLSearchParams(params);
+          smallerPage.set("limit", String(Math.max(1, Math.floor(limit / 5))));
+          return fetchAll<T>(path, smallerPage);
+        }
+      }
       const usage = usagePercent(response);
       if (usage >= 100) throw new MetaRateLimitError("Meta usage limit reached; run stopped cleanly");
       if (usage > 80) {

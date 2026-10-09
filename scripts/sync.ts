@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { getDatabasePool } from "../lib/db";
 import { getGa4DailyBreakdowns, getGa4Summary } from "../lib/ga4";
 import { getKlaviyoHistoricalRange } from "../lib/klaviyo";
-import { getMetaCampaignDaily, getMetaCreatives, getMetaEntityDaily, getMetaMarketDaily, MetaRateLimitError } from "../lib/meta";
+import { getMetaCampaignDaily, getMetaCreatives, getMetaEntityDaily, getMetaMarketDaily, MetaAuthenticationError, MetaRateLimitError } from "../lib/meta";
 import { getShopifySummary } from "../lib/shopify";
 import { reportingDate } from "../lib/reporting-time";
 
@@ -286,7 +286,7 @@ async function logRun(source: Source, from: string, to: string, status: RunStatu
   );
 }
 
-export type SourceSyncOutcome = { source: Source; from: string; to: string; status: RunStatus; rows: number; message: string };
+export type SourceSyncOutcome = { source: Source; from: string; to: string; status: RunStatus; rows: number; message: string; errorCode?: "META_AUTHENTICATION_REQUIRED" };
 
 export async function syncLatestSources(sources: Source[] = SOURCES): Promise<SourceSyncOutcome[]> {
   return Promise.all(sources.map(async (source) => {
@@ -303,7 +303,7 @@ export async function syncLatestSources(sources: Source[] = SOURCES): Promise<So
       const message = redact(error);
       const status = error instanceof MetaRateLimitError ? "partial" : "failed";
       await logRun(source, from, to, status, 0, message);
-      return { source, from, to, status, rows: 0, message };
+      return { source, from, to, status, rows: 0, message, ...(error instanceof MetaAuthenticationError ? { errorCode: "META_AUTHENTICATION_REQUIRED" as const } : {}) };
     }
   }));
 }
