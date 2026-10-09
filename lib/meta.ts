@@ -596,3 +596,51 @@ export async function getMetaSummary(from: string, to: string): Promise<MetaSumm
     campaigns,
   };
 }
+
+// Read configured settings separately from performance: these describe retrieval time.
+export async function getMetaAdSettings(adId: string): Promise<import("./meta-ad-settings").AdSettings> {
+  const value = requiredEnv("META_AD_ACCOUNT_ID");
+  const accountId = value.startsWith("act_") ? value : `act_${value}`;
+  type RecordValue = import("./meta-ad-settings").SettingsRecord;
+  const read = async (fields: string) => {
+    const rows = await fetchAll<RecordValue>(`${accountId}/ads`, new URLSearchParams({
+      fields, filtering: JSON.stringify([{ field: "id", operator: "IN", value: [adId] }]), limit: "1",
+    }));
+    const row = rows.find((item) => item.id === adId);
+    if (!row) throw new Error("Ad not available in the connected account");
+    return row;
+  };
+  const identity = await read("id,name,status,effective_status,campaign{id,name,objective},adset{id,name}");
+  const groups = [
+    ["creative", "id,creative{id,name,thumbnail_url,image_url,body,title,link_url,call_to_action_type,object_story_spec,asset_feed_spec,url_tags,effective_object_story_id}"],
+    ["audience", "id,adset{targeting}"],
+    ["delivery", "id,adset{optimization_goal,billing_event,bid_strategy,bid_amount,daily_budget,lifetime_budget,start_time,end_time,attribution_spec,promoted_object,destination_type,is_dynamic_creative},campaign{daily_budget,lifetime_budget,bid_strategy}"],
+  ] as const;
+  const results = await Promise.allSettled(groups.map(([, fields]) => read(fields)));
+  const data: Record<string, RecordValue> = {};
+  const warnings: string[] = [];
+  results.forEach((result, index) => {
+    const key = groups[index][0];
+    if (result.status === "fulfilled") data[key] = result.value;
+    else warnings.push(`${key[0].toUpperCase() + key.slice(1)} settings unavailable from Meta.`);
+  });
+  const object = (item: unknown): RecordValue => item && typeof item === "object" && !Array.isArray(item) ? item as RecordValue : {};
+  const targeting = object(object(data.audience?.adset).targeting);
+  const placements: RecordValue = {};
+  const audience: RecordValue = {};
+  for (const [key, item] of Object.entries(targeting)) {
+    if (/positions$|publisher_platforms|device_platforms|user_device|user_os|wireless_carrier/.test(key)) placements[key] = item;
+    else audience[key] = item;
+  }
+  let currency = "";
+  try {
+    const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${accountId}?fields=currency`, {
+      headers: { Authorization: `Bearer ${requiredEnv("META_ACCESS_TOKEN")}` }, cache: "no-store",
+    });
+    const body = await response.json() as { currency?: string };
+    if (response.ok) currency = body.currency ?? "";
+  } catch { /* Budget values remain explicitly labeled as account minor units. */ }
+  return { adId, accountId, retrievedAt: new Date().toISOString(), currency,
+    identity, creative: object(data.creative?.creative), audience, placements,
+    delivery: { ad_set: object(data.delivery?.adset), campaign: object(data.delivery?.campaign) }, warnings };
+}

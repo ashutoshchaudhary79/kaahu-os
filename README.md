@@ -57,3 +57,18 @@ When the dashboard opens it immediately renders the latest Supabase snapshot whi
 `GET /api/meta` returns daily spend, a deduplicated paid funnel, purchase value, and campaign metrics for the selected range. It uses the ad account attribution settings and requires `META_ACCESS_TOKEN` with `ads_read` access.
 
 `GET /api/meta/markets` returns the all-campaign geographic spend breakdown. Pass `dimension=comscore` for Meta's current `comscore_market` dimension or `dimension=state` for Meta's `region` breakdown. The dashboard displays spend share, impressions, link clicks, CTR, and CPM. Meta suppresses conversion metrics at these geographic breakdowns for this account, so the panel does not imply geographic ROAS.
+
+### Meta ad settings
+
+Expand a campaign, then an ad set, and click an ad name to inspect its creative,
+CTA, targeting, placements, status, delivery, attribution and budget settings.
+The drawer keeps selected-date performance separate from settings observed at
+retrieval time. Flexible creative variants are shown together, not attributed to
+individual impressions. Missing settings are not inferred.
+
+Apply `supabase/migrations/20261009000000_add_meta_ad_settings_snapshots.sql`
+when provisioning a new reporting database. The server-only ad detail endpoint
+uses read-only Meta requests scoped to the connected account and saves dated
+snapshots when ads are inspected. Complete snapshots are reused for one hour;
+a failed refresh can show the last stored snapshot with a warning. This is
+on-demand observation history, not a historical record of every settings change.

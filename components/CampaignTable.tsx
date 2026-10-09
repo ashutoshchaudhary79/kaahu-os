@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import type { DateRange } from "./DateRangePicker";
 import { CampaignDetailPanel, type CampaignDetailData } from "./CampaignDetailPanel";
+import { AdDetailPanel } from "./AdDetailPanel";
 import { AcronymText } from "./AcronymText";
 
 export type PerformanceRow = {
@@ -59,6 +60,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
   const [loading, setLoading] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ key: "name" | keyof PerformanceRow["raw"]; direction: "asc" | "desc" }>({ key: "spend", direction: "desc" });
+  const [detailAd, setDetailAd] = useState<PerformanceRow | null>(null);
   const [detailCampaign, setDetailCampaign] = useState<PerformanceRow | null>(null);
   const [detail, setDetail] = useState<CampaignDetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -70,6 +72,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
     setLoading(new Set());
     setErrors({});
     setDetailCampaign(null);
+    setDetailAd(null);
   }, [range.from, range.to]);
 
   const openCampaignDetail = async (campaign: PerformanceRow) => {
@@ -164,7 +167,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
               <span>{row.name}</span>
             </button>
           ) : (
-            <span className="inline-flex items-start gap-2"><span aria-hidden="true" className="w-3 shrink-0 text-center text-ink-faint">•</span><span>{row.name}</span></span>
+            <span className="inline-flex items-start gap-2"><span aria-hidden="true" className="w-3 shrink-0 text-center text-ink-faint">•</span><button type="button" onClick={() => setDetailAd(row)} className="text-left text-accent underline-offset-2 hover:underline">{row.name}</button></span>
           )}
           <span className="mt-0.5 block text-[11px] font-normal text-ink-faint" style={{ paddingLeft: level ? "20px" : "20px" }}>{row.type}</span>
         </div>
@@ -198,7 +201,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
       {loading.has(adKey) && <p className="mt-3 text-ink-faint">Loading ads…</p>}
       {errors[adKey] && <p className="mt-3 text-brick">{errors[adKey]}</p>}
       {adsOpen && children[adKey]?.map((ad) => <div key={ad.id} className="mt-3 border-t border-rule pt-3">
-        <div className="mb-2 flex items-start justify-between gap-3"><span className="font-medium">{ad.name}<span className="mt-0.5 block text-[10px] font-normal text-ink-faint">Ad</span></span><span className="shrink-0 tabular-nums">{ad.spend} · {ad.roas}</span></div>
+        <div className="mb-2 flex items-start justify-between gap-3"><button type="button" onClick={() => setDetailAd(ad)} className="text-left font-medium text-accent hover:underline">{ad.name}<span className="mt-0.5 block text-[10px] font-normal text-ink-faint">Ad · View details</span></button><span className="shrink-0 tabular-nums">{ad.spend} · {ad.roas}</span></div>
         {funnelMetrics(ad)}
       </div>)}
       {adsOpen && children[adKey]?.length === 0 && <p className="mt-3 text-ink-faint">No ads delivered in this range.</p>}
@@ -262,6 +265,7 @@ export function CampaignTable({ campaigns, range }: { campaigns: PerformanceRow[
           </tbody>
         </table>
       </div>
+      <AdDetailPanel ad={detailAd} range={range} onClose={() => setDetailAd(null)} />
       <CampaignDetailPanel campaign={detailCampaign ? { id: detailCampaign.id, name: detailCampaign.name, objective: detailCampaign.objective, role: detailCampaign.role } : null} detail={detail} loading={detailLoading} error={detailError} to={range.to} onClose={() => setDetailCampaign(null)} />
     </section>
   );
